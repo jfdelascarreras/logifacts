@@ -43,7 +43,7 @@ export function JoinPanelSection() {
           <h3 className="font-heading text-2xl font-semibold tracking-wide text-foreground">
             Upcoming Panel Sessions
           </h3>
-          <p className="text-sm text-muted-foreground">Click "Join" to be added to the waitlist</p>
+          <p className="text-sm text-muted-foreground">Click &quot;Join&quot; to be added to the waitlist</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {primarySeries.name} | {primarySeries.cadence} | {primarySeries.timezone}
           </p>

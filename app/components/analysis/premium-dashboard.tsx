@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -51,7 +51,7 @@ export function PremiumDashboard() {
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
 
-  async function loadHistory(): Promise<AnalysisHistoryItem[]> {
+  const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
     const res = await fetch('/api/invoices/analyze', { method: 'GET' })
     const json = await res.json()
     if (!res.ok) {
@@ -60,10 +60,10 @@ export function PremiumDashboard() {
     const list = (json.analyses as AnalysisHistoryItem[]) ?? []
     setHistory(list)
     return list
-  }
+  }, [])
 
   /** Initial page load: read cached summary only (fast). Avoids timeouts from re-parsing every CSV. */
-  async function loadCachedSummary() {
+  const loadCachedSummary = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
     try {
@@ -84,7 +84,7 @@ export function PremiumDashboard() {
     } finally {
       setLoadingCached(false)
     }
-  }
+  }, [loadHistory])
 
   /** Recompute everything from uploaded CSVs (slow). Use after new uploads or when you need fresh totals. */
   async function refreshAnalysis() {
@@ -108,7 +108,7 @@ export function PremiumDashboard() {
 
   useEffect(() => {
     void loadCachedSummary()
-  }, [])
+  }, [loadCachedSummary])
 
   const measures = summary?.measures
   const monthlyTotals = (summary?.monthlySpend ?? []).reduce(

@@ -374,7 +374,13 @@ export async function POST() {
       }
     })
     .sort((a, b) => b.sortKey.localeCompare(a.sortKey))
-    .map(({ sortKey: _sortKey, ...row }) => row)
+    .map((row) => ({
+      month: row.month,
+      totalCost: row.totalCost,
+      costFuel: row.costFuel,
+      costAccessorials: row.costAccessorials,
+      costSurcharges: row.costSurcharges,
+    }))
 
   if (dimDateRows.length) {
     const { error: dimDateError } = await supabase.from('dim_date').upsert(dimDateRows, {
