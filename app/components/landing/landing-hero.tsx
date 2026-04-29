@@ -1,12 +1,8 @@
-import Image from 'next/image'
 import Link from 'next/link'
 
+import { BrandLogo } from '@/app/components/branding/brand-logo'
 import { Button } from '@/components/ui/button'
 
-const USE_TRANSPARENT_LOGO = false
-const HEADER_LOGO_SRC = USE_TRANSPARENT_LOGO
-  ? '/logifacts-logo-transparent.png'
-  : '/logifacts-logo-default.png'
 const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.html'
 
 export function LandingHero() {
@@ -21,14 +17,7 @@ export function LandingHero() {
         <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:gap-10 sm:px-6 sm:py-24">
           <header className="flex items-center justify-between">
             <Link href="/" className="shrink-0" aria-label="LogiFacts home">
-              <Image
-                src={HEADER_LOGO_SRC}
-                alt="LogiFacts logo"
-                width={1024}
-                height={416}
-                priority
-                className="h-auto w-[180px] sm:w-[240px]"
-              />
+              <BrandLogo priority />
             </Link>
 
             <nav className="hidden items-center gap-3 sm:flex">
@@ -40,7 +29,7 @@ export function LandingHero() {
               </Link>
               <Link
                 href="/auth/sign-up"
-                className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-foreground/90 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Sign up
               </Link>

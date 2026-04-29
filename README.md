@@ -13,3 +13,7 @@ pnpm dev
 ```
 
 Then open [http://localhost:3000](http://localhost:3000).
+
+## Design System
+
+- [Logifacts Design System](docs/logifacts-design-system.md)

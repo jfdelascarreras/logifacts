@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import { BrandLogo } from '@/app/components/branding/brand-logo'
 import { LogoutButton } from '@/components/logout-button'
 import { cn } from '@/lib/utils'
 
@@ -21,7 +22,9 @@ export function AuthSidebar() {
   return (
     <aside className="w-full border-b border-border bg-card/50 p-4 md:min-h-svh md:w-64 md:border-b-0 md:border-r md:p-6">
       <div className="mb-6">
-        <p className="font-heading text-lg font-semibold text-foreground">Logifacts</p>
+        <Link href="/home" className="inline-block" aria-label="LogiFacts home">
+          <BrandLogo className="w-[140px] sm:w-[160px]" />
+        </Link>
         <p className="text-xs text-muted-foreground">Navigation</p>
       </div>
 
