@@ -1,5 +1,7 @@
 'use client'
 
+import { ExternalLink, Headphones, MessageCircle } from 'lucide-react'
+import Image from 'next/image'
 import { useMemo, useState } from 'react'
 
 import {
@@ -13,6 +15,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+
+/** Optional — Spotify / Apple Podcasts / RSS etc. */
+const PODCAST_LISTEN_URL = process.env.NEXT_PUBLIC_PODCAST_URL?.trim() ?? ''
+
+/** Same funnel as landing survey — shapes panel & podcast priorities */
+const COMMUNITY_SURVEY_URL =
+  'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.html'
 
 export function JoinPanelSection() {
   const [searchValue, setSearchValue] = useState('')
@@ -37,6 +46,48 @@ export function JoinPanelSection() {
           connecting with others who care about improving how information is shared and understood.
         </p>
       </header>
+
+      <Card className="overflow-hidden border-secondary/45 bg-gradient-to-br from-secondary/35 via-background to-[color-mix(in_srgb,var(--chart-3)_18%,white)] shadow-sm dark:border-secondary/30 dark:from-secondary/12 dark:via-background dark:to-background">
+        <CardContent className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:gap-4 sm:py-2.5">
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-heading text-base font-semibold leading-tight tracking-wide text-foreground">
+              Listen to <span className="text-accent">Just the Facts</span>
+            </p>
+            <p className="text-xs leading-snug text-muted-foreground sm:text-sm">
+              Logistics insights, operator stories, and ideas you can use — tune in and tell us what should be next.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {PODCAST_LISTEN_URL ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 gap-1.5 bg-accent px-3 text-accent-foreground hover:bg-accent/90"
+                  asChild
+                >
+                  <a href={PODCAST_LISTEN_URL} target="_blank" rel="noopener noreferrer">
+                    <Headphones className="size-3.5 shrink-0" aria-hidden />
+                    Listen now
+                    <ExternalLink className="size-3 opacity-90" aria-hidden />
+                  </a>
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 border-secondary/50 bg-background/80 hover:bg-muted/80" asChild>
+                <a href={COMMUNITY_SURVEY_URL} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="size-3.5 shrink-0" aria-hidden />
+                  Shape what we cover
+                </a>
+              </Button>
+            </div>
+          </div>
+          <Image
+            src="/join-panel/podcast-invite.png"
+            alt="Just the Facts podcast"
+            width={168}
+            height={84}
+            className="mx-auto h-auto max-h-[72px] w-full max-w-[168px] shrink-0 rounded-md border border-border/50 bg-card object-contain sm:mx-0 sm:max-h-[76px]"
+          />
+        </CardContent>
+      </Card>
 
       <div className="space-y-4">
         <div>

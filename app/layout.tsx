@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat, Oswald } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/app/components/theme/theme-provider";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -32,6 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${montserrat.variable} ${oswald.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
@@ -42,9 +44,11 @@ export default function RootLayout({
           Skip to main content
         </a>
 
-        <main id="main-content" className="min-h-screen">
-          {children}
-        </main>
+        <ThemeProvider>
+          <main id="main-content" className="min-h-screen">
+            {children}
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   );
