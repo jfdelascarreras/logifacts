@@ -21,12 +21,16 @@ export default async function PremiumAnalysisPage() {
       subtitle={`Signed in as ${user.email ?? 'your account'}`}
     >
       <div className="space-y-8">
-        <PremiumDashboard />
-        <section className="bg-background pb-10">
+        <section
+          id="premium-invoice-upload"
+          className="scroll-mt-24 bg-background pb-2"
+          aria-label="Invoice CSV upload"
+        >
           <div className="mx-auto w-full max-w-5xl">
             <InvoiceCsvUpload />
           </div>
         </section>
+        <PremiumDashboard />
       </div>
     </AuthenticatedShell>
   )

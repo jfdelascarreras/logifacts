@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
+import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 
 const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.html'
@@ -15,25 +16,28 @@ export function LandingHero() {
         </div>
 
         <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:gap-10 sm:px-6 sm:py-24">
-          <header className="flex items-center justify-between">
+          <header className="flex items-center justify-between gap-3">
             <Link href="/" className="shrink-0" aria-label="LogiFacts home">
               <BrandLogo priority />
             </Link>
 
-            <nav className="hidden items-center gap-3 sm:flex">
-              <Link
-                href="/auth/login"
-                className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/auth/sign-up"
-                className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                Sign up
-              </Link>
-            </nav>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <ThemeToggle />
+              <nav className="hidden items-center gap-3 sm:flex">
+                <Link
+                  href="/auth/login"
+                  className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/auth/sign-up"
+                  className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  Sign up
+                </Link>
+              </nav>
+            </div>
           </header>
 
           <section className="flex flex-col items-start gap-8">

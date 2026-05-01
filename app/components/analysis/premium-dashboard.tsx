@@ -129,7 +129,7 @@ export function PremiumDashboard() {
           <div>
             <h1 className="font-heading text-3xl font-bold tracking-wide text-accent">Premium Analysis</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              High-level cost and volume metrics based on all your uploaded invoices.
+              High-level cost and volume metrics based on invoice CSVs you upload on this page.
             </p>
             {fromCache && summary ? (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -165,14 +165,23 @@ export function PremiumDashboard() {
 
         {!loadingCached && !summary && !error ? (
           <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-            <p className="mb-3">No saved analysis yet. Click below to compute metrics from your uploaded CSVs.</p>
+            <p className="mb-3">
+              No saved analysis yet.{' '}
+              <a
+                href="#premium-invoice-upload"
+                className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                Upload one or more invoice CSV files
+              </a>{' '}
+              above, then run analysis here once uploads are stored.
+            </p>
             <Button
               variant="outline"
               className="border-border bg-background text-foreground hover:bg-muted"
               onClick={refreshAnalysis}
               disabled={refreshing}
             >
-              {refreshing ? 'Computing…' : 'Run analysis'}
+              {refreshing ? 'Computing…' : 'Run analysis from uploads'}
             </Button>
           </div>
         ) : null}

@@ -151,7 +151,7 @@ export function InvoiceCsvUpload() {
           skippedTotal
             ? `, skipped ${skippedTotal} (${[skippedDuplicates && `${skippedDuplicates} duplicate`, skippedOversized && `${skippedOversized} too large`, skippedEmpty && `${skippedEmpty} empty/unreadable`].filter(Boolean).join(', ')})`
             : ''
-        }. Next step: analyze all uploads.`
+        }. Run analysis here or scroll down and choose Refresh analysis to update your dashboard.`
       )
       setFiles([])
       await refreshRecent()
@@ -183,13 +183,15 @@ export function InvoiceCsvUpload() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="mx-auto w-full max-w-5xl">
       <Card className="border-accent/25 bg-card">
         <CardHeader>
-          <CardTitle className="text-accent">Upload Invoices (CSV)</CardTitle>
+          <CardTitle className="text-accent">Upload invoice CSVs</CardTitle>
           <CardDescription>
-            Upload a CSV file containing your invoice/shipment data. We store it for analysis under
-            your account.
+            Add carrier invoice exports (comma-separated CSV). Files are saved to your account; use{' '}
+            <strong className="font-medium text-foreground">Refresh analysis</strong> in the metrics section
+            below (or <strong className="font-medium text-foreground">Analyze all uploads</strong> here) to compute
+            Premium Analysis from everything you have uploaded.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
+import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { LogoutButton } from '@/components/logout-button'
 import { cn } from '@/lib/utils'
 
@@ -22,10 +23,13 @@ export function AuthSidebar() {
   return (
     <aside className="w-full border-b border-border bg-card/50 p-4 md:min-h-svh md:w-64 md:border-b-0 md:border-r md:p-6">
       <div className="mb-6">
-        <Link href="/home" className="inline-block" aria-label="LogiFacts home">
-          <BrandLogo className="w-[140px] sm:w-[160px]" />
-        </Link>
-        <p className="text-xs text-muted-foreground">Navigation</p>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <Link href="/home" className="inline-block" aria-label="LogiFacts home">
+            <BrandLogo className="w-[140px] sm:w-[160px]" />
+          </Link>
+          <ThemeToggle />
+        </div>
+        <p className="text-xs text-muted-foreground">Use the moon/sun button to switch dark mode.</p>
       </div>
 
       <nav className="flex flex-wrap gap-2 md:flex-col md:gap-1">
