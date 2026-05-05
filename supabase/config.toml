@@ -1,0 +1,4 @@
+project_id = "xsejivvwfyitkosaojtd"
+
+[functions.onboard-user]
+verify_jwt = false

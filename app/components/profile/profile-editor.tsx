@@ -110,7 +110,7 @@ export function ProfileEditor({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="fullName">Full Name</Label>
+            <Label htmlFor="fullName">User Name</Label>
             <Input
               id="fullName"
               value={form.fullName}
@@ -123,7 +123,7 @@ export function ProfileEditor({
             <Input id="email" value={email} disabled />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="companyName">Business Name</Label>
+            <Label htmlFor="companyName">Company Name</Label>
             <Input
               id="companyName"
               value={form.companyName}

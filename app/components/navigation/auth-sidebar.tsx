@@ -29,7 +29,6 @@ export function AuthSidebar() {
           </Link>
           <ThemeToggle />
         </div>
-        <p className="text-xs text-muted-foreground">Use the moon/sun button to switch dark mode.</p>
       </div>
 
       <nav className="flex flex-wrap gap-2 md:flex-col md:gap-1">
