@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
+import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 
 const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.html'
@@ -21,6 +22,7 @@ export function LandingHero() {
             </Link>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              <ThemeToggle />
               <nav className="hidden items-center gap-3 sm:flex">
                 <Link
                   href="/auth/login"

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
+import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { LogoutButton } from '@/components/logout-button'
 import { cn } from '@/lib/utils'
 
@@ -26,6 +27,7 @@ export function AuthSidebar() {
           <Link href="/home" className="inline-block" aria-label="LogiFacts home">
             <BrandLogo className="w-[140px] sm:w-[160px]" />
           </Link>
+          <ThemeToggle />
         </div>
       </div>
 
