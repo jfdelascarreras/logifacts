@@ -10,6 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
+import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
 
 type Measures = {
   totalCost: number
@@ -30,6 +32,32 @@ type Summary = {
     costFuel?: number
     costAccessorials?: number
     costSurcharges?: number
+  }>
+  dailySpend?: Array<{
+    date: string
+    totalCost: number
+    costFuel?: number
+    costAccessorials?: number
+    costSurcharges?: number
+  }>
+  category2VolumeCpp?: Array<{
+    category2: string
+    totalVolume: number
+    totalCpp: number
+    totalCost: number
+  }>
+  modeVolumeCpp?: Array<{
+    mode: string
+    totalVolume: number
+    totalCpp: number
+    totalCost: number
+  }>
+  weightBucketVolume?: Array<{
+    weightBucket: string
+    sort: number
+    totalVolume: number
+    totalCost: number
+    totalCpp: number
   }>
 }
 
@@ -73,6 +101,11 @@ export function PremiumDashboard() {
         setSummary({
           totalRows: latest.summary.totalRows ?? 0,
           measures: latest.summary.measures,
+          monthlySpend: latest.summary.monthlySpend ?? [],
+          dailySpend: latest.summary.dailySpend ?? [],
+          category2VolumeCpp: latest.summary.category2VolumeCpp ?? [],
+          modeVolumeCpp: latest.summary.modeVolumeCpp ?? [],
+          weightBucketVolume: latest.summary.weightBucketVolume ?? [],
         })
         setFromCache(true)
       } else {
@@ -191,7 +224,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Total Cost</CardTitle>
-                <CardDescription>Σ Net Amount</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -206,10 +238,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Total Packages</CardTitle>
-                <CardDescription>
-                  Sum of package qty once per shipment (deduped by invoice + tracking / shipment ref). Charge
-                  lines no longer multiply-count.
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -227,7 +255,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Fuel Cost</CardTitle>
-                <CardDescription>Net Amount where mapping Category 2 = Fuel Surcharge</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -242,9 +269,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Cost – Surcharges</CardTitle>
-                <CardDescription>
-                  Net Amount where mapping Category 1 is Fuel Surcharge or Accessorial Surcharge
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -259,9 +283,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Cost – Accessorials</CardTitle>
-                <CardDescription>
-                  Net Amount where Charge Classification Code = ACC and Charge Category Code not INF/ICC
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -276,7 +297,6 @@ export function PremiumDashboard() {
             <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
               <CardHeader>
                 <CardTitle>Weight Gap</CardTitle>
-                <CardDescription>Σ Billed Weight – Σ Entered Weight</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-foreground">
@@ -288,17 +308,6 @@ export function PremiumDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-accent/25 bg-card">
-              <CardHeader>
-                <CardTitle>Rows Analyzed</CardTitle>
-                <CardDescription>Number of invoice lines across all uploads</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {summary.totalRows.toLocaleString()}
-                </div>
-              </CardContent>
-            </Card>
           </div>
         ) : null}
 
@@ -306,7 +315,7 @@ export function PremiumDashboard() {
           <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
             <CardHeader>
               <CardTitle>Spend by Month</CardTitle>
-              <CardDescription>DAX-aligned monthly measures</CardDescription>
+              <CardDescription>Monthly spend trends</CardDescription>
             </CardHeader>
             <CardContent>
               <div
@@ -387,6 +396,18 @@ export function PremiumDashboard() {
               </div>
             </CardContent>
           </Card>
+        ) : null}
+
+        {summary?.dailySpend?.length ? <CostTrendGrid dailySpend={summary.dailySpend} /> : null}
+
+        {summary?.category2VolumeCpp?.length &&
+        summary?.modeVolumeCpp?.length &&
+        summary?.weightBucketVolume?.length ? (
+          <CreativeVisualsGrid
+            category2VolumeCpp={summary.category2VolumeCpp}
+            modeVolumeCpp={summary.modeVolumeCpp}
+            weightBucketVolume={summary.weightBucketVolume}
+          />
         ) : null}
 
         {history.length ? (

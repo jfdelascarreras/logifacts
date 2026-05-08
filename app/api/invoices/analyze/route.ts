@@ -72,6 +72,25 @@ function normalizeMappingText(value: string | null | undefined): string {
     .toUpperCase()
 }
 
+function modeFromZone(zone: number): string {
+  if (zone >= 400 && zone < 500) return 'Express/Special'
+  if (zone >= 300 && zone < 400) return 'Air'
+  if (zone >= 200 && zone < 300) return 'International Export'
+  if (zone >= 100 && zone < 200) return 'International Import'
+  if (zone >= 0 && zone < 100) return 'Ground'
+  return 'Unknown'
+}
+
+function weightBucketFromLbs(weightLbs: number): { bucket: string; sort: number } {
+  if (weightLbs <= 1) return { bucket: '0-1 lbs', sort: 1 }
+  if (weightLbs <= 5) return { bucket: '2-5 lbs', sort: 2 }
+  if (weightLbs <= 10) return { bucket: '6-10 lbs', sort: 3 }
+  if (weightLbs <= 20) return { bucket: '11-20 lbs', sort: 4 }
+  if (weightLbs <= 50) return { bucket: '21-50 lbs', sort: 5 }
+  if (weightLbs <= 100) return { bucket: '51-100 lbs', sort: 6 }
+  return { bucket: '100+ lbs', sort: 7 }
+}
+
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
 export const maxDuration = 120
 
@@ -173,6 +192,32 @@ export async function POST() {
       costAccessorials: number
       costSurcharges: number
     }>
+    dailySpend: Array<{
+      date: string
+      totalCost: number
+      costFuel: number
+      costAccessorials: number
+      costSurcharges: number
+    }>
+    category2VolumeCpp: Array<{
+      category2: string
+      totalVolume: number
+      totalCpp: number
+      totalCost: number
+    }>
+    modeVolumeCpp: Array<{
+      mode: string
+      totalVolume: number
+      totalCpp: number
+      totalCost: number
+    }>
+    weightBucketVolume: Array<{
+      weightBucket: string
+      sort: number
+      totalVolume: number
+      totalCost: number
+      totalCpp: number
+    }>
   }
 
   const summary: Summary = {
@@ -194,15 +239,30 @@ export async function POST() {
       weightGap: 0,
     },
     monthlySpend: [],
+    dailySpend: [],
+    category2VolumeCpp: [],
+    modeVolumeCpp: [],
+    weightBucketVolume: [],
   }
 
   let sumBilledWeight = 0
   let sumEnteredWeight = 0
-  const dailySpend = new Map<string, { totalCost: number; netSpend: number }>()
+  const dailySpend = new Map<
+    string,
+    {
+      totalCost: number
+      costFuel: number
+      costAccessorials: number
+      costSurcharges: number
+    }
+  >()
   const monthSpend = new Map<
     string,
     { totalCost: number; costFuel: number; costAccessorials: number; costSurcharges: number }
   >()
+  const category2Agg = new Map<string, { totalCost: number; totalVolume: number }>()
+  const modeAgg = new Map<string, { totalCost: number; totalVolume: number }>()
+  const weightBucketAgg = new Map<string, { sort: number; totalCost: number; totalVolume: number }>()
 
   for (const rec of records) {
     const carrier = rec['Carrier Name'] || 'Unknown'
@@ -217,12 +277,17 @@ export async function POST() {
     const dutyAmount = toNumber(rec['Duty Amount'])
     const billedWeight = toNumber(rec['Billed Weight'])
     const enteredWeight = toNumber(rec['Entered Weight'])
+    const volumeUnits = Math.max(1, toNumber(rec['Package Quantity']))
+    const zone = toNumber(rec['Zone'])
     const chargeCategoryCode = (rec['Charge Category Code'] ?? '').trim().toUpperCase()
     const chargeClassification = (rec['Charge Classification Code'] ?? '').trim().toUpperCase()
     const chargeDescription = (rec['Charge Description'] ?? '').trim()
     const mapping = mappingByDescription.get(normalizeMappingText(chargeDescription))
     const category1 = normalizeMappingText(mapping?.category_1)
     const category2 = normalizeMappingText(mapping?.category_2)
+    const category2Label = category2 || 'UNMAPPED'
+    const modeLabel = modeFromZone(zone)
+    const weightBucket = weightBucketFromLbs(billedWeight)
 
     summary.totals.netAmount += netAmount
     summary.totals.invoiceAmount += invoiceAmount
@@ -250,6 +315,25 @@ export async function POST() {
       summary.measures.costAccessorials += netAmount
     }
 
+    const catAgg = category2Agg.get(category2Label) ?? { totalCost: 0, totalVolume: 0 }
+    catAgg.totalCost += netAmount
+    catAgg.totalVolume += volumeUnits
+    category2Agg.set(category2Label, catAgg)
+
+    const mode = modeAgg.get(modeLabel) ?? { totalCost: 0, totalVolume: 0 }
+    mode.totalCost += netAmount
+    mode.totalVolume += volumeUnits
+    modeAgg.set(modeLabel, mode)
+
+    const bucket = weightBucketAgg.get(weightBucket.bucket) ?? {
+      sort: weightBucket.sort,
+      totalCost: 0,
+      totalVolume: 0,
+    }
+    bucket.totalCost += netAmount
+    bucket.totalVolume += volumeUnits
+    weightBucketAgg.set(weightBucket.bucket, bucket)
+
     if (!summary.byCarrier[carrier]) {
       summary.byCarrier[carrier] = {
         shipmentCount: 0,
@@ -274,9 +358,18 @@ export async function POST() {
 
     const dateKey = parseInvoiceDateKey(rec['Invoice Date'])
     if (dateKey) {
-      const daily = dailySpend.get(dateKey) ?? { totalCost: 0, netSpend: 0 }
-      daily.totalCost += invoiceAmount
-      daily.netSpend += netAmount
+      const daily = dailySpend.get(dateKey) ?? {
+        totalCost: 0,
+        costFuel: 0,
+        costAccessorials: 0,
+        costSurcharges: 0,
+      }
+      daily.totalCost += netAmount
+      if (isFuelRow) daily.costFuel += netAmount
+      if (chargeClassification === 'ACC' && !isExcludedAccCat) daily.costAccessorials += netAmount
+      if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
+        daily.costSurcharges += netAmount
+      }
       dailySpend.set(dateKey, daily)
 
       const [yearText, monthText] = dateKey.split('-')
@@ -317,14 +410,6 @@ export async function POST() {
   // Weight gap = Σ Billed Weight – Σ Entered Weight
   summary.measures.weightGap = sumBilledWeight - sumEnteredWeight
 
-  const dimDateRows: Array<{
-    date_key: string
-    year_num: number
-    month_num: number
-    month_name: string
-    month_label: string
-    quarter_num: number
-  }> = []
   const spendRows: Array<{
     user_id: string
     invoice_date: string
@@ -341,20 +426,11 @@ export async function POST() {
     const monthLabel = `${monthName} ${yearNum}`
     const quarterNum = Math.floor((monthNum - 1) / 3) + 1
 
-    dimDateRows.push({
-      date_key: dateKey,
-      year_num: yearNum,
-      month_num: monthNum,
-      month_name: monthName,
-      month_label: monthLabel,
-      quarter_num: quarterNum,
-    })
-
     spendRows.push({
       user_id: user.id,
       invoice_date: dateKey,
       total_cost: daily.totalCost,
-      net_spend: daily.netSpend,
+      net_spend: daily.totalCost,
     })
 
   }
@@ -382,14 +458,43 @@ export async function POST() {
       costSurcharges: row.costSurcharges,
     }))
 
-  if (dimDateRows.length) {
-    const { error: dimDateError } = await supabase.from('dim_date').upsert(dimDateRows, {
-      onConflict: 'date_key',
-    })
-    if (dimDateError) {
-      return NextResponse.json({ error: dimDateError.message }, { status: 400 })
-    }
-  }
+  summary.dailySpend = Array.from(dailySpend.entries())
+    .map(([date, values]) => ({
+      date,
+      totalCost: values.totalCost,
+      costFuel: values.costFuel,
+      costAccessorials: values.costAccessorials,
+      costSurcharges: values.costSurcharges,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  summary.category2VolumeCpp = Array.from(category2Agg.entries())
+    .map(([category2, values]) => ({
+      category2,
+      totalVolume: values.totalVolume,
+      totalCost: values.totalCost,
+      totalCpp: values.totalVolume > 0 ? values.totalCost / values.totalVolume : 0,
+    }))
+    .sort((a, b) => b.totalVolume - a.totalVolume)
+
+  summary.modeVolumeCpp = Array.from(modeAgg.entries())
+    .map(([mode, values]) => ({
+      mode,
+      totalVolume: values.totalVolume,
+      totalCost: values.totalCost,
+      totalCpp: values.totalVolume > 0 ? values.totalCost / values.totalVolume : 0,
+    }))
+    .sort((a, b) => b.totalVolume - a.totalVolume)
+
+  summary.weightBucketVolume = Array.from(weightBucketAgg.entries())
+    .map(([weightBucket, values]) => ({
+      weightBucket,
+      sort: values.sort,
+      totalVolume: values.totalVolume,
+      totalCost: values.totalCost,
+      totalCpp: values.totalVolume > 0 ? values.totalCost / values.totalVolume : 0,
+    }))
+    .sort((a, b) => a.sort - b.sort)
 
   const { error: clearSpendError } = await supabase
     .from('invoice_spend_by_date')

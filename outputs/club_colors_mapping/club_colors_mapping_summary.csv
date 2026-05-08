@@ -1,0 +1,8 @@
+metric,value
+input_files,57
+output_rows,1981
+deduplicated_rows_removed,80984
+mapped_rows,1848
+unmapped_rows,133
+temporary_sender_override,Club Colors
+generated_at_utc,2026-05-08T15:41:02.110278+00:00
