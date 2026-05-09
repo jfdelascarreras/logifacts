@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 type DailySpendPoint = {
@@ -12,11 +14,12 @@ type DailySpendPoint = {
 
 type MetricKey = 'totalCost' | 'costAccessorials' | 'costSurcharges' | 'costFuel'
 
-const METRICS: Array<{ key: MetricKey; title: string; strokeVar: string }> = [
-  { key: 'totalCost', title: 'Cost', strokeVar: 'var(--chart-1)' },
-  { key: 'costAccessorials', title: 'Accessorials', strokeVar: 'var(--chart-2)' },
-  { key: 'costSurcharges', title: 'Surcharges', strokeVar: 'var(--chart-3)' },
-  { key: 'costFuel', title: 'Fuel Cost', strokeVar: 'var(--chart-4)' },
+const METRICS: Array<{ key: MetricKey; title: string; strokeVar: string; strokeWidth?: number }> = [
+  { key: 'totalCost', title: 'Cost', strokeVar: 'var(--chart-1)', strokeWidth: 2.25 },
+  { key: 'costAccessorials', title: 'Accessorials', strokeVar: 'var(--chart-2)', strokeWidth: 2.25 },
+  // Slightly stronger style so this series is easier to read.
+  { key: 'costSurcharges', title: 'Surcharges', strokeVar: 'var(--chart-3)', strokeWidth: 2.9 },
+  { key: 'costFuel', title: 'Fuel Cost', strokeVar: 'var(--chart-4)', strokeWidth: 2.25 },
 ]
 
 function formatCompact(value: number): string {
@@ -82,7 +85,34 @@ function deltaText(current: number, previous: number): string {
   return `${sign}${formatCompact(diff)}`
 }
 
-function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
+function formatMonthYear(dateStr: string): string {
+  const dt = new Date(`${dateStr}T00:00:00Z`)
+  return dt.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function Sparkline({
+  values,
+  stroke,
+  dates,
+  metricTitle,
+  strokeWidth = 2.25,
+}: {
+  values: number[]
+  stroke: string
+  dates: string[]
+  metricTitle: string
+  strokeWidth?: number
+}) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
   if (!values.length) return <div className="h-44 rounded-md border border-border bg-muted/20" />
   const width = 640
   const height = 220
@@ -104,23 +134,112 @@ function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
     })
     .join(' ')
 
+  const monthTickByLabel = new Map<string, number>()
+  for (let i = 0; i < dates.length; i += 1) {
+    const date = dates[i]
+    const monthKey = date.slice(0, 7)
+    if (!monthTickByLabel.has(monthKey)) {
+      monthTickByLabel.set(monthKey, i)
+    }
+  }
+  const monthTicksRaw = Array.from(monthTickByLabel.entries()).map(([monthKey, idx]) => ({
+    label: formatMonthYear(`${monthKey}-01`),
+    idx,
+    leftPct: (idx / Math.max(1, dates.length - 1)) * 100,
+  }))
+  let monthTicks = monthTicksRaw
+  if (monthTicksRaw.length > 1) {
+    // Keep labels spaced so they don't overlap visually.
+    const maxLabels = 7
+    const step = Math.max(1, Math.ceil(monthTicksRaw.length / maxLabels))
+    monthTicks = monthTicksRaw.filter((_, i) => i % step === 0 || i === monthTicksRaw.length - 1)
+  }
+
+  const hoveredPoint = hoveredIdx !== null ? points[hoveredIdx] : null
+  const hoveredDate = hoveredIdx !== null ? dates[hoveredIdx] : null
+  const hoveredValue = hoveredIdx !== null ? values[hoveredIdx] ?? 0 : null
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
-      <path
-        d={smoothPath}
-        fill="none"
-        stroke={stroke}
-        strokeOpacity="0.85"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div className="space-y-1">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
+        {points.map((point, idx) => {
+          const zoneWidth = idx === 0 ? 12 : Math.max(8, point.x - points[idx - 1].x)
+          return (
+            <rect
+              key={`${dates[idx]}-${idx}`}
+              x={point.x - zoneWidth / 2}
+              y={0}
+              width={zoneWidth}
+              height={height}
+              fill="transparent"
+              onMouseEnter={() => setHoveredIdx(idx)}
+              onMouseMove={() => setHoveredIdx(idx)}
+              onFocus={() => setHoveredIdx(idx)}
+              onBlur={() => setHoveredIdx(null)}
+              onMouseLeave={() => setHoveredIdx((prev) => (prev === idx ? null : prev))}
+            >
+              <title>{`${metricTitle}\n${dates[idx]}: ${formatCurrency(values[idx] ?? 0)}`}</title>
+            </rect>
+          )
+        })}
+        {hoveredPoint ? (
+          <line
+            x1={hoveredPoint.x}
+            x2={hoveredPoint.x}
+            y1={8}
+            y2={height - 8}
+            stroke={stroke}
+            strokeOpacity="0.28"
+            strokeWidth="1.25"
+            strokeDasharray="3 3"
+          />
+        ) : null}
+        <path
+          d={smoothPath}
+          fill="none"
+          stroke={stroke}
+          strokeOpacity="0.85"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {hoveredPoint ? (
+          <>
+            <circle
+              cx={hoveredPoint.x}
+              cy={hoveredPoint.y}
+              r={4.25}
+              fill={stroke}
+              stroke="var(--background)"
+              strokeWidth={1.5}
+            />
+            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r={8} fill={stroke} fillOpacity={0.15} />
+          </>
+        ) : null}
+      </svg>
+      {hoveredDate && hoveredValue !== null ? (
+        <div className="text-[11px] text-muted-foreground">
+          {hoveredDate}: <span className="font-medium text-foreground">{formatCurrency(hoveredValue)}</span>
+        </div>
+      ) : null}
+      <div className="relative h-4 text-[10px] text-muted-foreground">
+        {monthTicks.map((tick) => (
+          <span
+            key={`${tick.label}-${tick.idx}-${tick.leftPct.toFixed(2)}`}
+            className="absolute -translate-x-1/2 whitespace-nowrap"
+            style={{ left: `${tick.leftPct}%` }}
+          >
+            {tick.label}
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }
 
 export function CostTrendGrid({ dailySpend }: { dailySpend: DailySpendPoint[] }) {
   if (!dailySpend.length) return null
+  const dates = dailySpend.map((row) => row.date)
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -159,7 +278,13 @@ export function CostTrendGrid({ dailySpend }: { dailySpend: DailySpendPoint[] })
                   <div>{deltaText(ytd, ytdPrev)}</div>
                 </div>
               </div>
-              <Sparkline values={series} stroke={metric.strokeVar} />
+              <Sparkline
+                values={series}
+                stroke={metric.strokeVar}
+                dates={dates}
+                metricTitle={metric.title}
+                strokeWidth={metric.strokeWidth}
+              />
             </CardContent>
           </Card>
         )

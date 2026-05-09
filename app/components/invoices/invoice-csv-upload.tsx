@@ -3,36 +3,35 @@
 import { useMemo, useState } from 'react'
 
 import { createClient } from '@/lib/supabase/client'
-import { parseInvoiceCsvText } from '@/lib/invoice-csv'
+import { normalizeCsvForDedupe, parseInvoiceCsvText, sha256HexUtf8 } from '@/lib/invoices'
+import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+/** Supabase PostgREST errors are plain objects, not always `instanceof Error`. */
+function describePostgrestLikeError(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message
+  if (typeof e === 'object' && e !== null) {
+    const o = e as { message?: string; details?: string; hint?: string }
+    const parts = [o.message, o.details, o.hint].map((s) => (s ? String(s).trim() : '')).filter(Boolean)
+    if (parts.length) return parts.join(' — ')
+  }
+  return ''
+}
+
+/** Keeps each request under typical gateway / PostgREST body limits when many CSVs are selected. */
+const INSERT_CHUNK_SIZE = 5
+
 export function InvoiceCsvUpload() {
   const supabase = useMemo(() => createClient(), [])
 
   const [files, setFiles] = useState<File[]>([])
-  const [isUploading, setIsUploading] = useState(false)
+  /** `uploading` = saving files; `analyzing` = POST /api/invoices/analyze after save */
+  const [workPhase, setWorkPhase] = useState<'idle' | 'uploading' | 'analyzing'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analysis, setAnalysis] = useState<null | {
-    totalRows: number
-    totals: {
-      netAmount: number
-      invoiceAmount: number
-      dutyAmount: number
-    }
-    byCarrier: Record<
-      string,
-      { shipmentCount: number; totalNetAmount: number; totalInvoiceAmount: number }
-    >
-    byService: Record<
-      string,
-      { shipmentCount: number; totalNetAmount: number; totalInvoiceAmount: number }
-    >
-  }>(null)
   const [recentUploads, setRecentUploads] = useState<
     Array<{ id: string; original_file_name: string; created_at: string; row_count: number | null; status: string }>
   >([])
@@ -59,7 +58,7 @@ export function InvoiceCsvUpload() {
 
     const maxBytes = 5 * 1024 * 1024 // 5MB
 
-    setIsUploading(true)
+    setWorkPhase('uploading')
     try {
       const {
         data: { user },
@@ -70,13 +69,20 @@ export function InvoiceCsvUpload() {
 
       const { data: existingUploads, error: existingError } = await supabase
         .from('invoice_uploads')
-        .select('original_file_name')
+        .select('original_file_name, content_sha256')
         .eq('user_id', user.id)
 
       if (existingError) throw existingError
 
       const existingNames = new Set((existingUploads ?? []).map((r) => r.original_file_name))
-      const seenInBatch = new Set<string>()
+      const existingHashes = new Set(
+        (existingUploads ?? [])
+          .map((r) => r.content_sha256)
+          .filter((h): h is string => typeof h === 'string' && h.length > 0)
+      )
+
+      const seenNamesInBatch = new Set<string>()
+      const seenHashesInBatch = new Set<string>()
 
       const insertedRows: Array<{
         user_id: string
@@ -84,14 +90,16 @@ export function InvoiceCsvUpload() {
         csv_text: string
         row_count: number
         status: string
+        content_sha256: string
       }> = []
 
-      let skippedDuplicates = 0
+      let skippedDuplicateName = 0
+      let skippedDuplicateContent = 0
       let skippedOversized = 0
       let skippedEmpty = 0
       for (const file of files) {
-        if (existingNames.has(file.name) || seenInBatch.has(file.name)) {
-          skippedDuplicates += 1
+        if (existingNames.has(file.name) || seenNamesInBatch.has(file.name)) {
+          skippedDuplicateName += 1
           continue
         }
 
@@ -101,6 +109,13 @@ export function InvoiceCsvUpload() {
         }
 
         const csvText = await file.text()
+        const dedupeKey = normalizeCsvForDedupe(csvText)
+        const contentSha256 = await sha256HexUtf8(dedupeKey)
+
+        if (existingHashes.has(contentSha256) || seenHashesInBatch.has(contentSha256)) {
+          skippedDuplicateContent += 1
+          continue
+        }
 
         // Apply UPS invoice header mapping by parsing each row using INVOICE_HEADERS.
         // We store raw csv_text but row_count is based on mapped records.
@@ -116,15 +131,22 @@ export function InvoiceCsvUpload() {
           csv_text: csvText.replace(/^\uFEFF/, ''),
           row_count: mappedRecords.length,
           status: 'uploaded',
+          content_sha256: contentSha256,
         })
-        seenInBatch.add(file.name)
+        seenNamesInBatch.add(file.name)
+        seenHashesInBatch.add(contentSha256)
       }
 
       if (!insertedRows.length) {
         const parts: string[] = []
-        if (skippedDuplicates > 0) {
+        if (skippedDuplicateName > 0) {
           parts.push(
-            `${skippedDuplicates} file(s) skipped — already uploaded (same file name). Rename the file or delete the old upload in the database.`
+            `${skippedDuplicateName} file(s) skipped — same file name as an upload already on your account (or selected twice). Rename the file or remove the existing upload if you meant to replace it.`
+          )
+        }
+        if (skippedDuplicateContent > 0) {
+          parts.push(
+            `${skippedDuplicateContent} file(s) skipped — identical invoice data already uploaded (same CSV content, even if the file name differs).`
           )
         }
         if (skippedOversized > 0) {
@@ -142,43 +164,70 @@ export function InvoiceCsvUpload() {
         )
       }
 
-      const { error: insertErr } = await supabase.from('invoice_uploads').insert(insertedRows)
-      if (insertErr) throw insertErr
+      let insertedCount = 0
+      for (let i = 0; i < insertedRows.length; i += INSERT_CHUNK_SIZE) {
+        const chunk = insertedRows.slice(i, i + INSERT_CHUNK_SIZE)
+        const { error: insertErr } = await supabase.from('invoice_uploads').insert(chunk)
+        if (insertErr) {
+          const detail = describePostgrestLikeError(insertErr) || 'Database insert failed.'
+          throw new Error(
+            insertedCount > 0
+              ? `Saved ${insertedCount} of ${insertedRows.length} file(s), then an error occurred: ${detail} If some files were saved, check Recent uploads or try again with the remaining files.`
+              : detail
+          )
+        }
+        insertedCount += chunk.length
+      }
 
-      const skippedTotal = skippedDuplicates + skippedOversized + skippedEmpty
-      setSuccess(
+      const skippedTotal =
+        skippedDuplicateName + skippedDuplicateContent + skippedOversized + skippedEmpty
+      const uploadNote =
         `Uploaded ${insertedRows.length} file(s)${
           skippedTotal
-            ? `, skipped ${skippedTotal} (${[skippedDuplicates && `${skippedDuplicates} duplicate`, skippedOversized && `${skippedOversized} too large`, skippedEmpty && `${skippedEmpty} empty/unreadable`].filter(Boolean).join(', ')})`
+            ? `, skipped ${skippedTotal} (${[
+                skippedDuplicateName && `${skippedDuplicateName} duplicate name`,
+                skippedDuplicateContent && `${skippedDuplicateContent} duplicate content`,
+                skippedOversized && `${skippedOversized} too large`,
+                skippedEmpty && `${skippedEmpty} empty/unreadable`,
+              ]
+                .filter(Boolean)
+                .join(', ')})`
             : ''
-        }. Run analysis here or scroll down and choose Refresh analysis to update your dashboard.`
-      )
+        }.`
+
       setFiles([])
       await refreshRecent()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Upload failed.')
-    } finally {
-      setIsUploading(false)
-    }
-  }
 
-  async function handleAnalyze() {
-    setError(null)
-    setIsAnalyzing(true)
-    try {
-      const res = await fetch('/api/invoices/analyze', {
-        method: 'POST',
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to analyze invoices.')
+      setWorkPhase('analyzing')
+      setError(null)
+      try {
+        const res = await fetch('/api/invoices/analyze', { method: 'POST' })
+        const json = (await res.json()) as { error?: string; summary?: unknown; uploadId?: string; uploadsAnalyzed?: number }
+        if (!res.ok) {
+          throw new Error(json.error || 'Analysis failed.')
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(PREMIUM_ANALYSIS_UPDATED, {
+              detail: { summary: json.summary, uploadId: json.uploadId, uploadsAnalyzed: json.uploadsAnalyzed },
+            })
+          )
+        }
+        setSuccess(`${uploadNote} Analysis complete — your dashboard below is updated.`)
+      } catch (analyzeErr: unknown) {
+        const msg = analyzeErr instanceof Error ? analyzeErr.message : 'Analysis failed.'
+        setSuccess(null)
+        setError(
+          `${uploadNote} Automatic analysis did not finish: ${msg} Your files are saved — use Refresh analysis below to recompute.`
+        )
+      } finally {
+        setWorkPhase('idle')
       }
-      setAnalysis(json.summary)
-      setSuccess('Analysis complete.')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to analyze invoices.')
-    } finally {
-      setIsAnalyzing(false)
+      const fromErr = e instanceof Error ? e.message : ''
+      const fromObj = describePostgrestLikeError(e)
+      setError(fromErr || fromObj || 'Upload failed.')
+      setWorkPhase('idle')
     }
   }
 
@@ -188,10 +237,9 @@ export function InvoiceCsvUpload() {
         <CardHeader>
           <CardTitle className="text-accent">Upload invoice CSVs</CardTitle>
           <CardDescription>
-            Add carrier invoice exports (comma-separated CSV). Files are saved to your account; use{' '}
-            <strong className="font-medium text-foreground">Refresh analysis</strong> in the metrics section
-            below (or <strong className="font-medium text-foreground">Analyze all uploads</strong> here) to compute
-            Premium Analysis from everything you have uploaded.
+            Add UPS-style invoice CSV exports. After each successful upload we analyze your stored files and update the
+            metrics below automatically. Use <strong className="font-medium text-foreground">Refresh analysis</strong>{' '}
+            only when you want to recompute manually (for example after mapping changes or if automatic analysis failed).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -214,7 +262,8 @@ export function InvoiceCsvUpload() {
               />
               {files.length ? (
                 <p id="invoice-csv-help" className="text-sm text-muted-foreground">
-                  Selected {files.length} file(s). UPS header mapping will be applied to each.
+                  Selected {files.length} file(s). UPS header mapping will be applied to each. Duplicate file names
+                  (or identical file contents) are skipped automatically. Many files upload in small batches.
                 </p>
               ) : (
                 <p id="invoice-csv-help" className="text-sm text-muted-foreground">
@@ -237,28 +286,23 @@ export function InvoiceCsvUpload() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <Button onClick={handleUpload} disabled={!files.length || isUploading}>
-                {isUploading ? 'Uploading...' : 'Upload CSV'}
+              <Button onClick={handleUpload} disabled={!files.length || workPhase !== 'idle'}>
+                {workPhase === 'analyzing'
+                  ? 'Analyzing…'
+                  : workPhase === 'uploading'
+                    ? 'Uploading…'
+                    : 'Upload CSV'}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 className="border-accent/40 text-accent hover:bg-accent/10"
-                disabled={isUploading}
+                disabled={workPhase !== 'idle'}
                 onClick={() => {
                   refreshRecent().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load uploads.'))
                 }}
               >
                 Refresh
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="border-accent/40 text-accent hover:bg-accent/10"
-                onClick={handleAnalyze}
-                disabled={isAnalyzing}
-              >
-                {isAnalyzing ? 'Analyzing...' : 'Analyze all uploads'}
               </Button>
             </div>
 
@@ -285,69 +329,6 @@ export function InvoiceCsvUpload() {
                       <div className="mt-2 text-xs text-muted-foreground">Status: {u.status}</div>
                     </div>
                   ))}
-                </div>
-              </div>
-            ) : null}
-
-            {analysis ? (
-              <div className="mt-4 space-y-3 rounded-lg border border-accent/25 bg-background p-3 text-sm shadow-sm">
-                <div className="font-heading font-semibold tracking-wide text-accent">Summary</div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Rows</div>
-                    <div>{analysis.totalRows}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Invoice Amount (total)</div>
-                    <div>{analysis.totals.invoiceAmount.toFixed(2)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Net Amount (total)</div>
-                    <div>{analysis.totals.netAmount.toFixed(2)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Duty Amount (total)</div>
-                    <div>{analysis.totals.dutyAmount.toFixed(2)}</div>
-                  </div>
-                </div>
-
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="mb-1 text-xs font-medium text-muted-foreground">
-                      Top carriers by net amount
-                    </div>
-                    <div className="space-y-1">
-                      {Object.entries(analysis.byCarrier)
-                        .sort((a, b) => b[1].totalNetAmount - a[1].totalNetAmount)
-                        .slice(0, 3)
-                        .map(([carrier, v]) => (
-                          <div key={carrier} className="flex items-center justify-between gap-2">
-                            <span className="truncate">{carrier}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {v.shipmentCount} · {v.totalNetAmount.toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs font-medium text-muted-foreground">
-                      Top services by net amount
-                    </div>
-                    <div className="space-y-1">
-                      {Object.entries(analysis.byService)
-                        .sort((a, b) => b[1].totalNetAmount - a[1].totalNetAmount)
-                        .slice(0, 3)
-                        .map(([service, v]) => (
-                          <div key={service} className="flex items-center justify-between gap-2">
-                            <span className="truncate">{service}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {v.shipmentCount} · {v.totalNetAmount.toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
                 </div>
               </div>
             ) : null}

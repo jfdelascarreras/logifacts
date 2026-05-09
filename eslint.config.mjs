@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Workspace/vendor/generated paths that should not be linted as app source:
+    "**/.venv/**",
+    "Invoices skills/**",
+    "supabase/.temp/**",
+    "outputs/**",
   ]),
 ]);
 

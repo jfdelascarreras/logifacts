@@ -5,7 +5,7 @@ Pipeline:
 1) Read invoice rows from a folder (headered or headerless CSVs)
 2) Normalize charge descriptions via UPS_Mapping.xlsx
 3) Map to consolidated master charge descriptions via Master_Mapping_Consolidated_Updated.xlsx
-4) Force temporary sender assignment to Club Colors
+4) Optional sender override: --sender-company / INVOICE_SENDER_COMPANY_NAME (else CSV Sender Company Name when headered)
 5) Export consolidated rows + summary + unmapped report
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import sys
 from collections import Counter
@@ -30,9 +31,6 @@ UPS_MAPPING_XLSX = Path("/Users/jose_logifacts/Bootcamp/Logifacts/Invoices skill
 MASTER_MAPPING_XLSX = Path(
     "/Users/jose_logifacts/Bootcamp/Logifacts/Invoices skills/Master_Mapping_Consolidated_Updated.xlsx"
 )
-
-# Temporary business override requested by user.
-TEMP_SENDER_COMPANY_NAME = "Club Colors"
 
 NS = {
     "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -120,6 +118,13 @@ def parse_args() -> argparse.Namespace:
         "--no-dedupe",
         action="store_true",
         help="disable duplicate invoice-row removal",
+    )
+    parser.add_argument(
+        "--sender-company",
+        dest="sender_company",
+        default=os.environ.get("INVOICE_SENDER_COMPANY_NAME", "").strip(),
+        help='Sets Sender company_name on each row; default INVOICE_SENDER_COMPANY_NAME env. '
+        'When unset/empty, uses CSV column Sender Company Name (headered files only).',
     )
     return parser.parse_args()
 
@@ -350,6 +355,7 @@ def process_invoice_file(
     file_path: Path,
     ups_mapping: dict[str, MappingRow],
     master_mapping: dict[str, MappingRow],
+    sender_company_override: str = "",
 ) -> tuple[list[dict[str, str]], Counter[str]]:
     rows = load_csv_rows(file_path)
     if not rows:
@@ -380,6 +386,7 @@ def process_invoice_file(
         if not row or not any(str(v).strip() for v in row):
             continue
 
+        csv_sender_company = ""
         if has_headers:
             # Headered variant support.
             header = rows[0]
@@ -395,6 +402,7 @@ def process_invoice_file(
             billed_weight_lbs = to_float(record.get("Billed Weight", "0"), default=0.0)
             volume_units = to_int(record.get("Package Quantity", "1"), default=1)
             zone = to_int(record.get("Zone", "-1"), default=-1)
+            csv_sender_company = str(record.get("Sender Company Name", "")).strip()
         else:
             charge_raw = infer_charge_description(row, valid_ups_charges)
             invoice_number = infer_invoice_number(row, file_path.name)
@@ -403,6 +411,9 @@ def process_invoice_file(
             billed_weight_lbs = infer_weight_lbs_from_row(row)
             volume_units = 1
             zone = infer_zone_from_row(row)
+
+        ov = sender_company_override.strip()
+        sender_company_name = ov if ov else csv_sender_company
 
         normalized_ups_key = normalize_text(charge_raw)
         ups_row = ups_mapping.get(normalized_ups_key)
@@ -435,7 +446,7 @@ def process_invoice_file(
             {
                 "source_file": file_path.name,
                 "invoice_number": invoice_number,
-                "Sender company_name": TEMP_SENDER_COMPANY_NAME,
+                "Sender company_name": sender_company_name,
                 "Charge Classification Code": charge_class_code,
                 "Charge Category Code": charge_category_code,
                 "Net Amount": f"{net_amount:.6f}",
@@ -535,8 +546,12 @@ def main() -> int:
     all_rows: list[dict[str, str]] = []
     unmapped_total: Counter[str] = Counter()
 
+    sender_ov = str(args.sender_company).strip()
+
     for csv_file in csv_files:
-        file_rows, file_unmapped = process_invoice_file(csv_file, ups_mapping, master_mapping)
+        file_rows, file_unmapped = process_invoice_file(
+            csv_file, ups_mapping, master_mapping, sender_company_override=sender_ov
+        )
         all_rows.extend(file_rows)
         unmapped_total.update(file_unmapped)
 
@@ -608,7 +623,7 @@ def main() -> int:
         {"metric": "deduplicated_rows_removed", "value": str(dedupe_removed)},
         {"metric": "mapped_rows", "value": str(mapped_count)},
         {"metric": "unmapped_rows", "value": str(unmapped_count)},
-        {"metric": "temporary_sender_override", "value": TEMP_SENDER_COMPANY_NAME},
+        {"metric": "sender_company_override", "value": sender_ov or "(none — from CSV when headered)"},
         {"metric": "generated_at_utc", "value": datetime.now(timezone.utc).isoformat()},
     ]
     write_csv(summary_path, summary_rows, ["metric", "value"])

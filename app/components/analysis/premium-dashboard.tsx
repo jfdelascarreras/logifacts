@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
+import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 
 type Measures = {
   totalCost: number
@@ -36,9 +37,9 @@ type Summary = {
   dailySpend?: Array<{
     date: string
     totalCost: number
-    costFuel?: number
-    costAccessorials?: number
-    costSurcharges?: number
+    costFuel: number
+    costAccessorials: number
+    costSurcharges: number
   }>
   category2VolumeCpp?: Array<{
     category2: string
@@ -91,6 +92,19 @@ export function PremiumDashboard() {
   }, [])
 
   /** Initial page load: read cached summary only (fast). Avoids timeouts from re-parsing every CSV. */
+  const applySummaryPayload = useCallback((raw: Summary & Record<string, unknown>) => {
+    if (!raw?.measures) return
+    setSummary({
+      totalRows: raw.totalRows ?? 0,
+      measures: raw.measures,
+      monthlySpend: raw.monthlySpend ?? [],
+      dailySpend: raw.dailySpend ?? [],
+      category2VolumeCpp: raw.category2VolumeCpp ?? [],
+      modeVolumeCpp: raw.modeVolumeCpp ?? [],
+      weightBucketVolume: raw.weightBucketVolume ?? [],
+    })
+  }, [])
+
   const loadCachedSummary = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
@@ -98,15 +112,7 @@ export function PremiumDashboard() {
       const list = await loadHistory()
       const latest = list[0]
       if (latest?.summary?.measures) {
-        setSummary({
-          totalRows: latest.summary.totalRows ?? 0,
-          measures: latest.summary.measures,
-          monthlySpend: latest.summary.monthlySpend ?? [],
-          dailySpend: latest.summary.dailySpend ?? [],
-          category2VolumeCpp: latest.summary.category2VolumeCpp ?? [],
-          modeVolumeCpp: latest.summary.modeVolumeCpp ?? [],
-          weightBucketVolume: latest.summary.weightBucketVolume ?? [],
-        })
+        applySummaryPayload(latest.summary as Summary & Record<string, unknown>)
         setFromCache(true)
       } else {
         setSummary(null)
@@ -117,7 +123,7 @@ export function PremiumDashboard() {
     } finally {
       setLoadingCached(false)
     }
-  }, [loadHistory])
+  }, [applySummaryPayload, loadHistory])
 
   /** Recompute everything from uploaded CSVs (slow). Use after new uploads or when you need fresh totals. */
   async function refreshAnalysis() {
@@ -129,8 +135,10 @@ export function PremiumDashboard() {
       if (!res.ok) {
         throw new Error(json.error || 'Failed to refresh analysis.')
       }
-      setSummary(json.summary)
-      setFromCache(false)
+      if (json.summary?.measures) {
+        applySummaryPayload(json.summary as Summary & Record<string, unknown>)
+        setFromCache(false)
+      }
       await loadHistory()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to refresh analysis.')
@@ -142,6 +150,21 @@ export function PremiumDashboard() {
   useEffect(() => {
     void loadCachedSummary()
   }, [loadCachedSummary])
+
+  /** After upload, the CSV card runs POST /analyze and dispatches this — update dashboard without a second click. */
+  useEffect(() => {
+    function onPremiumAnalysisUpdated(e: Event) {
+      const ce = e as CustomEvent<{ summary?: unknown }>
+      const raw = ce.detail?.summary as (Summary & Record<string, unknown>) | undefined
+      if (raw?.measures) {
+        applySummaryPayload(raw)
+        setFromCache(false)
+        void loadHistory()
+      }
+    }
+    window.addEventListener(PREMIUM_ANALYSIS_UPDATED, onPremiumAnalysisUpdated)
+    return () => window.removeEventListener(PREMIUM_ANALYSIS_UPDATED, onPremiumAnalysisUpdated)
+  }, [applySummaryPayload, loadHistory])
 
   const measures = summary?.measures
   const monthlyTotals = (summary?.monthlySpend ?? []).reduce(
@@ -166,8 +189,9 @@ export function PremiumDashboard() {
             </p>
             {fromCache && summary ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                Showing your last saved analysis (fast). Use &quot;Refresh analysis&quot; to recompute from all
-                uploads — that step can take a while with many large CSVs.
+                Showing your last saved analysis from the server. New uploads trigger analysis automatically; use{' '}
+                <span className="font-medium text-foreground">Refresh analysis</span> for a manual full recompute when
+                you need it.
               </p>
             ) : null}
           </div>
@@ -198,24 +222,18 @@ export function PremiumDashboard() {
 
         {!loadingCached && !summary && !error ? (
           <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-            <p className="mb-3">
+            <p>
               No saved analysis yet.{' '}
               <a
                 href="#premium-invoice-upload"
                 className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
-                Upload one or more invoice CSV files
+                Upload invoice CSV files
               </a>{' '}
-              above, then run analysis here once uploads are stored.
+              above — we analyze automatically after each successful upload. If you already have uploads but no
+              analysis row, use{' '}
+              <span className="font-medium text-foreground">Refresh analysis</span> at the top to recompute manually.
             </p>
-            <Button
-              variant="outline"
-              className="border-border bg-background text-foreground hover:bg-muted"
-              onClick={refreshAnalysis}
-              disabled={refreshing}
-            >
-              {refreshing ? 'Computing…' : 'Run analysis from uploads'}
-            </Button>
           </div>
         ) : null}
 

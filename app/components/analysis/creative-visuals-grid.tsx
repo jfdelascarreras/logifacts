@@ -47,7 +47,11 @@ function ComboVolumeCppChart({
             const volPct = (point.totalVolume / maxVol) * 100
             const cppPct = (point.totalCpp / maxCpp) * 100
             return (
-              <div key={point.label} className="space-y-1">
+              <div
+                key={point.label}
+                className="space-y-1"
+                title={`${point.label}\nVolume: ${formatNum(point.totalVolume)}\nCPP: ${formatNum(point.totalCpp)}`}
+              >
                 <div className="flex items-center justify-between text-xs">
                   <span className="truncate text-muted-foreground">{point.label}</span>
                   <span className="text-foreground">
@@ -91,6 +95,7 @@ function WeightBucketBarChart({ points }: { points: WeightBucketPoint[] }) {
                   <div
                     className="w-full rounded-sm"
                     style={{ height: `${Math.max(5, pct)}%`, background: 'var(--chart-5)', opacity: 0.95 }}
+                    title={`${point.weightBucket}\nTotal Volume: ${formatNum(point.totalVolume)}`}
                   />
                 </div>
                 <div className="font-medium text-foreground">{formatK(point.totalVolume)}</div>
