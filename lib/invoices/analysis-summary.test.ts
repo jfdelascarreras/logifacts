@@ -1,0 +1,183 @@
+/**
+ * Accuracy proofs: deterministic assertions on the same engine used by POST /api/invoices/analyze.
+ * Extend with real CSV snippets + signed-off expected totals when you validate against Power BI / finance.
+ */
+import { describe, expect, it } from 'vitest'
+
+import {
+  applyProfileSenderCompanyName,
+  buildChargeDescriptionLookup,
+  computeInvoiceAnalysisSummary,
+  filterRowsLikeClubColorsPowerQuery,
+  INVOICE_HEADERS,
+  modeFromZone,
+  parseInvoiceCsvText,
+  parseInvoiceDateKey,
+  shipmentPackageDedupeKey,
+  weightBucketFromLbs,
+  type ChargeDescriptionMappingRow,
+  type InvoiceRecord,
+} from '@/lib/invoices'
+
+function emptyInvoiceRecord(): InvoiceRecord {
+  return Object.fromEntries(INVOICE_HEADERS.map((h) => [h, null])) as InvoiceRecord
+}
+
+function invoiceRow(partial: Partial<Record<(typeof INVOICE_HEADERS)[number], string | null>>): InvoiceRecord {
+  return { ...emptyInvoiceRecord(), ...partial }
+}
+
+describe('parseInvoiceDateKey', () => {
+  it('parses ISO date component', () => {
+    expect(parseInvoiceDateKey('2025-06-30T00:00:00')).toBe('2025-06-30')
+    expect(parseInvoiceDateKey('2025-06-30')).toBe('2025-06-30')
+  })
+
+  it('parses US-style date component', () => {
+    expect(parseInvoiceDateKey('06/30/2025 12:00:00 AM')).toBe('2025-06-30')
+    expect(parseInvoiceDateKey('6/30/2025')).toBe('2025-06-30')
+  })
+})
+
+describe('modeFromZone + weightBucketFromLbs', () => {
+  it('maps zone bands like DAX helper', () => {
+    expect(modeFromZone(51)).toBe('Ground')
+    expect(modeFromZone(481)).toBe('Express/Special')
+    expect(weightBucketFromLbs(0.5).bucket).toBe('0-1 lbs')
+    expect(weightBucketFromLbs(3).bucket).toBe('2-5 lbs')
+  })
+})
+
+describe('shipmentPackageDedupeKey', () => {
+  it('builds stable key from invoice + tracking', () => {
+    const r = invoiceRow({
+      'Invoice Number': '2054533994',
+      'Tracking Number': '1Z999',
+      'Shipment Reference Number 1': '',
+      'Lead Shipment Number': '',
+    })
+    expect(shipmentPackageDedupeKey(r)).toBe('2054533994::1Z999')
+  })
+})
+
+describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
+  const baseMappingFuel: ChargeDescriptionMappingRow = {
+    charge_description: 'Fuel Surcharge',
+    transportation_mode: 'Other',
+    category_1: 'Fuel Surcharge',
+    category_2: 'Fuel Surcharge',
+    category_3: '',
+    category_4: '',
+    category_5: '',
+  }
+  const baseMappingFreight: ChargeDescriptionMappingRow = {
+    charge_description: 'Ground',
+    transportation_mode: 'Parcel',
+    category_1: 'Parcel',
+    category_2: 'Base Freight',
+    category_3: '',
+    category_4: '',
+    category_5: '',
+  }
+
+  it('matches hand-checked totals for freight + fuel + accessorial + package dedupe', () => {
+    const lookup = buildChargeDescriptionLookup([baseMappingFuel, baseMappingFreight])
+
+    // Same shipment, two charge lines: Package Quantity should dedupe to max(2,2)=2 once.
+    const line1 = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-03-10',
+      'Invoice Number': 'INV1',
+      'Tracking Number': 'TRK1',
+      'Package Quantity': '2',
+      'Billed Weight': '3',
+      'Entered Weight': '2',
+      'Zone': '51',
+      'Net Amount': '100.00',
+      'Invoice Amount': '100.00',
+      'Duty Amount': '0',
+      'Original Service Description': 'Ground',
+      'Charge Category Code': 'IMP',
+      'Charge Classification Code': 'SHP',
+      'Charge Description': 'Ground',
+    })
+    const line2 = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-03-10',
+      'Invoice Number': 'INV1',
+      'Tracking Number': 'TRK1',
+      'Package Quantity': '2',
+      'Billed Weight': '3',
+      'Entered Weight': '2',
+      'Zone': '51',
+      'Net Amount': '10.50',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Category Code': 'IMP',
+      'Charge Classification Code': 'SHP',
+      'Charge Description': 'Fuel Surcharge',
+    })
+    // Accessorial row (ACC, category not INF/ICC)
+    const line3 = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-03-11',
+      'Invoice Number': 'INV1',
+      'Tracking Number': 'TRK2',
+      'Package Quantity': '1',
+      'Billed Weight': '1',
+      'Entered Weight': '1',
+      'Zone': '51',
+      'Net Amount': '5.00',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Category Code': 'RES',
+      'Charge Classification Code': 'ACC',
+      'Charge Description': 'Residential',
+    })
+
+    const summary = computeInvoiceAnalysisSummary([line1, line2, line3], lookup)
+
+    expect(summary.totalRows).toBe(3)
+    expect(summary.totals.netAmount).toBeCloseTo(115.5, 6)
+    expect(summary.measures.totalCost).toBeCloseTo(115.5, 6)
+    expect(summary.measures.fuelCost).toBeCloseTo(10.5, 6)
+    expect(summary.measures.costAccessorials).toBeCloseTo(5, 6)
+    expect(summary.measures.costSurcharges).toBeCloseTo(10.5, 6)
+    expect(summary.measures.totalPackages).toBe(3)
+    expect(summary.measures.packageDedupeShipmentCount).toBe(2)
+    expect(summary.measures.weightGap).toBeCloseTo(2, 6)
+
+    const march = summary.monthlySpend.find((m) => m.month.includes('March') && m.month.includes('2025'))
+    expect(march?.totalCost).toBeCloseTo(115.5, 6)
+    expect(summary.dailySpend.map((d) => d.date)).toEqual(['2025-03-10', '2025-03-11'])
+  })
+})
+
+describe('parse → filter → profile sender (pipeline smoke)', () => {
+  it('produces records that survive Club Colors-style filter', () => {
+    const idx = Object.fromEntries(INVOICE_HEADERS.map((h, i) => [h, i])) as Record<string, number>
+    const cells = Array(INVOICE_HEADERS.length).fill('')
+    cells[idx['Invoice Date']] = '2025-01-15'
+    cells[idx['Invoice Number']] = '9001'
+    cells[idx['Recipient Number']] = 'R123'
+    cells[idx['Carrier Name']] = 'UPS'
+    cells[idx['Net Amount']] = '42.00'
+    cells[idx['Zone']] = '02'
+    cells[idx['Package Quantity']] = '1'
+    cells[idx['Billed Weight']] = '1'
+    cells[idx['Entered Weight']] = '1'
+    cells[idx['Charge Category Code']] = 'IMP'
+    cells[idx['Charge Classification Code']] = 'SHP'
+    cells[idx['Charge Description']] = 'Ground'
+    cells[idx['Tracking Number']] = 'Z1'
+
+    const csvText = cells.join(',')
+    const parsed = parseInvoiceCsvText(csvText)
+    const filtered = filterRowsLikeClubColorsPowerQuery(parsed)
+    const withSender = applyProfileSenderCompanyName(filtered, 'Acme Logistics')
+
+    expect(withSender).toHaveLength(1)
+    expect(withSender[0]?.['Sender Company Name']).toBe('Acme Logistics')
+    expect(withSender[0]?.['Net Amount']).toBe('42.00')
+  })
+})
