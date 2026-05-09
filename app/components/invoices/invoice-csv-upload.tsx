@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react'
 
 import { createClient } from '@/lib/supabase/client'
-import { normalizeCsvForDedupe, parseInvoiceCsvText, sha256HexUtf8 } from '@/lib/invoices'
+import { parseInvoiceCsvText } from '@/lib/invoices/csv'
+import { normalizeCsvForDedupe, sha256HexUtf8 } from '@/lib/invoices/dedupe-hash'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'

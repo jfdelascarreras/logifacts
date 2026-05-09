@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
 import {
-  applyProfileSenderCompanyName,
   buildChargeDescriptionLookup,
   computeInvoiceAnalysisSummary,
+} from '@/lib/invoices/analysis-summary'
+import {
+  applyProfileSenderCompanyName,
   filterRowsLikeClubColorsPowerQuery,
   parseInvoiceCsvText,
-} from '@/lib/invoices'
+} from '@/lib/invoices/csv'
 import { contentSha256FromStoredCsv } from '@/lib/invoices/dedupe-hash-server'
 
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
