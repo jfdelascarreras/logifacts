@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# Local crypto price cache (not part of the app)
+.crypto_cache/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
