@@ -1,4 +1,4 @@
-import { INVOICE_HEADERS } from './invoice-headers-ups'
+import { INVOICE_HEADERS } from './headers'
 
 export { INVOICE_HEADERS }
 
@@ -13,6 +13,16 @@ export function filterRowsLikeClubColorsPowerQuery(records: InvoiceRecord[]): In
     if (recipient.includes('UPS')) return false
     return true
   })
+}
+
+/** When set, replaces UPS `Sender Company Name` so reporting matches the logged-in account. */
+export function applyProfileSenderCompanyName(
+  records: InvoiceRecord[],
+  profileCompanyName: string | null | undefined
+): InvoiceRecord[] {
+  const name = String(profileCompanyName ?? '').trim()
+  if (!name) return records
+  return records.map((rec) => ({ ...rec, 'Sender Company Name': name }))
 }
 
 // Very small CSV splitter that understands quotes around values with commas.
