@@ -3,20 +3,40 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   buildChargeDescriptionLookup,
+  buildInvoiceAnalysisFilterMeta,
   computeInvoiceAnalysisSummary,
+  filterInvoiceRecords,
+  hasActiveInvoiceFilters,
+  normalizeInvoiceAnalysisFilters,
 } from '@/lib/invoices/analysis-summary'
 import {
   applyProfileSenderCompanyName,
   filterRowsLikeClubColorsPowerQuery,
   parseInvoiceCsvText,
 } from '@/lib/invoices/csv'
+import {
+  analyzeParseCacheFingerprint,
+  analyzeParseCacheKey,
+  getAnalyzeParseCache,
+  setAnalyzeParseCache,
+} from '@/lib/invoices/analyze-parse-cache'
 import { contentSha256FromStoredCsv } from '@/lib/invoices/dedupe-hash-server'
 
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
 export const maxDuration = 120
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient()
+
+  let filtersRaw: unknown
+  try {
+    const body = (await request.json()) as { filters?: unknown }
+    filtersRaw = body?.filters
+  } catch {
+    filtersRaw = undefined
+  }
+  const appliedFilters = normalizeInvoiceAnalysisFilters(filtersRaw)
+  const filtersActive = hasActiveInvoiceFilters(appliedFilters)
 
   const {
     data: { user },
@@ -27,13 +47,19 @@ export async function POST() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  // Get uploads for this user (aggregate analysis across all uploads)
-  const { data: uploads, error: uploadError } = await supabase
-    .from('invoice_uploads')
-    .select('id, csv_text, created_at, content_sha256')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(200)
+  const [{ data: uploads, error: uploadError }, { data: mappings, error: mappingsError }] = await Promise.all([
+    supabase
+      .from('invoice_uploads')
+      .select('id, csv_text, created_at, content_sha256')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('charge_description_mappings')
+      .select(
+        'charge_description, transportation_mode, category_1, category_2, category_3, category_4, category_5'
+      ),
+  ])
 
   if (uploadError) {
     return NextResponse.json({ error: uploadError.message }, { status: 400 })
@@ -56,22 +82,25 @@ export async function POST() {
     if (hashErr) {
       return NextResponse.json({ error: hashErr.message }, { status: 400 })
     }
+    u.content_sha256 = content_sha256
   }
 
   const profileCompanyName = String(user.user_metadata?.company_name ?? '').trim()
 
-  const records = applyProfileSenderCompanyName(
-    filterRowsLikeClubColorsPowerQuery(
-      uploads.flatMap((upload) => parseInvoiceCsvText(String(upload.csv_text ?? '')))
-    ),
-    profileCompanyName
-  )
-
-  const { data: mappings, error: mappingsError } = await supabase
-    .from('charge_description_mappings')
-    .select(
-      'charge_description, transportation_mode, category_1, category_2, category_3, category_4, category_5'
+  const parseCacheKey = analyzeParseCacheKey(user.id, analyzeParseCacheFingerprint(uploads))
+  let fullRecords = getAnalyzeParseCache(parseCacheKey, profileCompanyName)
+  if (!fullRecords) {
+    fullRecords = applyProfileSenderCompanyName(
+      filterRowsLikeClubColorsPowerQuery(
+        uploads.flatMap((upload) => parseInvoiceCsvText(String(upload.csv_text ?? '')))
+      ),
+      profileCompanyName
     )
+    setAnalyzeParseCache(parseCacheKey, profileCompanyName, fullRecords)
+  }
+
+  const filterMeta = buildInvoiceAnalysisFilterMeta(fullRecords)
+  const records = filterInvoiceRecords(fullRecords, appliedFilters)
 
   if (mappingsError) {
     return NextResponse.json({ error: mappingsError.message }, { status: 400 })
@@ -79,34 +108,43 @@ export async function POST() {
 
   const mappingByDescription = buildChargeDescriptionLookup(mappings ?? [])
 
-  const summary = computeInvoiceAnalysisSummary(records, mappingByDescription)
+  const summaryCore = computeInvoiceAnalysisSummary(records, mappingByDescription)
+  const summary = {
+    ...summaryCore,
+    filterMeta,
+    appliedFilters,
+  }
 
   const spendRows: Array<{
     user_id: string
     invoice_date: string
+    account_number: string
     total_cost: number
     net_spend: number
-  }> = summary.dailySpend.map((d) => ({
+  }> = summaryCore.dailySpendByAccount.map((d) => ({
     user_id: user.id,
     invoice_date: d.date,
+    account_number: d.accountNumber,
     total_cost: d.totalCost,
     net_spend: d.totalCost,
   }))
 
-  const { error: clearSpendError } = await supabase
-    .from('invoice_spend_by_date')
-    .delete()
-    .eq('user_id', user.id)
-  if (clearSpendError) {
-    return NextResponse.json({ error: clearSpendError.message }, { status: 400 })
-  }
-
-  if (spendRows.length) {
-    const { error: spendUpsertError } = await supabase
+  if (!filtersActive) {
+    const { error: clearSpendError } = await supabase
       .from('invoice_spend_by_date')
-      .upsert(spendRows, { onConflict: 'user_id,invoice_date' })
-    if (spendUpsertError) {
-      return NextResponse.json({ error: spendUpsertError.message }, { status: 400 })
+      .delete()
+      .eq('user_id', user.id)
+    if (clearSpendError) {
+      return NextResponse.json({ error: clearSpendError.message }, { status: 400 })
+    }
+
+    if (spendRows.length) {
+      const { error: spendUpsertError } = await supabase
+        .from('invoice_spend_by_date')
+        .upsert(spendRows, { onConflict: 'user_id,invoice_date,account_number' })
+      if (spendUpsertError) {
+        return NextResponse.json({ error: spendUpsertError.message }, { status: 400 })
+      }
     }
   }
 

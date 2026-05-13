@@ -7,10 +7,15 @@ import { describe, expect, it } from 'vitest'
 import {
   applyProfileSenderCompanyName,
   buildChargeDescriptionLookup,
+  buildInvoiceAnalysisFilterMeta,
   computeInvoiceAnalysisSummary,
+  filterInvoiceRecords,
+  mergeInvoiceAnalysisFilterMeta,
+  yearMonthKeyFromEngineMonthLabel,
   filterRowsLikeClubColorsPowerQuery,
   INVOICE_HEADERS,
   modeFromZone,
+  normalizeInvoiceAnalysisFilters,
   parseInvoiceCsvText,
   parseInvoiceDateKey,
   shipmentPackageDedupeKey,
@@ -87,6 +92,7 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     const line1 = invoiceRow({
       'Carrier Name': 'UPS',
       'Invoice Date': '2025-03-10',
+      'Account Number': 'ACC1',
       'Invoice Number': 'INV1',
       'Tracking Number': 'TRK1',
       'Package Quantity': '2',
@@ -104,6 +110,7 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     const line2 = invoiceRow({
       'Carrier Name': 'UPS',
       'Invoice Date': '2025-03-10',
+      'Account Number': 'ACC1',
       'Invoice Number': 'INV1',
       'Tracking Number': 'TRK1',
       'Package Quantity': '2',
@@ -121,6 +128,7 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     const line3 = invoiceRow({
       'Carrier Name': 'UPS',
       'Invoice Date': '2025-03-11',
+      'Account Number': 'ACC1',
       'Invoice Number': 'INV1',
       'Tracking Number': 'TRK2',
       'Package Quantity': '1',
@@ -150,6 +158,130 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     const march = summary.monthlySpend.find((m) => m.month.includes('March') && m.month.includes('2025'))
     expect(march?.totalCost).toBeCloseTo(115.5, 6)
     expect(summary.dailySpend.map((d) => d.date)).toEqual(['2025-03-10', '2025-03-11'])
+
+    expect(summary.dailySpendByAccount).toHaveLength(2)
+    const byDate = new Map(summary.dailySpendByAccount.map((r) => [r.date, r]))
+    expect(byDate.get('2025-03-10')?.totalCost).toBeCloseTo(110.5, 6)
+    expect(byDate.get('2025-03-11')?.totalCost).toBeCloseTo(5, 6)
+    expect(byDate.get('2025-03-10')?.accountNumber).toBe('ACC1')
+
+    expect(summary.spendByInvoice).toHaveLength(1)
+    expect(summary.spendByInvoice[0]?.accountNumber).toBe('ACC1')
+    expect(summary.spendByInvoice[0]?.invoiceNumber).toBe('INV1')
+    expect(summary.spendByInvoice[0]?.invoiceDate).toBe('2025-03-10')
+    expect(summary.spendByInvoice[0]?.totalCost).toBeCloseTo(115.5, 6)
+    expect(summary.spendByInvoice[0]?.costFuel).toBeCloseTo(10.5, 6)
+    expect(summary.spendByInvoice[0]?.costAccessorials).toBeCloseTo(5, 6)
+    expect(summary.spendByInvoice[0]?.costSurcharges).toBeCloseTo(10.5, 6)
+  })
+})
+
+describe('yearMonthKeyFromEngineMonthLabel + mergeInvoiceAnalysisFilterMeta', () => {
+  it('parses monthlySpend month labels from the engine', () => {
+    expect(yearMonthKeyFromEngineMonthLabel('March 2025')).toBe('2025-03')
+    expect(yearMonthKeyFromEngineMonthLabel('January 2026')).toBe('2026-01')
+  })
+
+  it('fills filter meta from saved summary when filterMeta is missing', () => {
+    const merged = mergeInvoiceAnalysisFilterMeta(undefined, {
+      dailySpend: [{ date: '2025-06-15' }, { date: '2026-01-02' }],
+      monthlySpend: [{ month: 'April 2025' }],
+      spendByInvoice: [{ accountNumber: 'ACC99' }, { accountNumber: 'ACC1' }],
+      dailySpendByAccount: [{ accountNumber: 'ACC77' }],
+    })
+    expect(merged.years).toEqual([2026, 2025])
+    expect(merged.yearMonths).toContain('2025-06')
+    expect(merged.yearMonths).toContain('2026-01')
+    expect(merged.yearMonths).toContain('2025-04')
+    expect(merged.accountNumbers).toEqual(['ACC1', 'ACC77', 'ACC99'])
+  })
+
+  it('unions server filterMeta with summary-derived values', () => {
+    const merged = mergeInvoiceAnalysisFilterMeta(
+      {
+        years: [2025],
+        yearMonths: ['2025-01'],
+        accountNumbers: ['A'],
+      },
+      {
+        dailySpend: [{ date: '2026-03-10' }],
+        spendByInvoice: [{ accountNumber: 'B' }],
+      }
+    )
+    expect(merged.years).toEqual([2026, 2025])
+    expect(merged.yearMonths).toContain('2025-01')
+    expect(merged.yearMonths).toContain('2026-03')
+    expect(merged.accountNumbers).toEqual(['A', 'B'])
+  })
+})
+
+describe('filterInvoiceRecords + filter meta', () => {
+  it('keeps rows in selected year', () => {
+    const r2024 = invoiceRow({
+      'Invoice Date': '2024-01-15',
+      'Account Number': 'A',
+      'Invoice Number': '1',
+    })
+    const r2025 = invoiceRow({
+      'Invoice Date': '2025-06-01',
+      'Account Number': 'B',
+      'Invoice Number': '2',
+    })
+    const filtered = filterInvoiceRecords([r2024, r2025], { year: 2025 })
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0]).toBe(r2025)
+  })
+
+  it('keeps rows in selected invoice month (YYYY-MM)', () => {
+    const a = invoiceRow({
+      'Invoice Date': '2025-03-10',
+      'Account Number': 'X',
+      'Invoice Number': '1',
+    })
+    const b = invoiceRow({
+      'Invoice Date': '2025-04-01',
+      'Account Number': 'X',
+      'Invoice Number': '2',
+    })
+    const out = filterInvoiceRecords([a, b], { yearMonth: '2025-03' })
+    expect(out).toHaveLength(1)
+    expect(out[0]).toBe(a)
+  })
+
+  it('buildInvoiceAnalysisFilterMeta collects years and accounts', () => {
+    const meta = buildInvoiceAnalysisFilterMeta([
+      invoiceRow({ 'Invoice Date': '2025-03-10', 'Account Number': 'Z9' }),
+      invoiceRow({ 'Invoice Date': '2025-04-01', 'Account Number': 'A1' }),
+    ])
+    expect(meta.years).toEqual([2025])
+    expect(meta.yearMonths).toEqual(['2025-04', '2025-03'])
+    expect(meta.accountNumbers).toEqual(['A1', 'Z9'])
+  })
+
+  it('normalizeInvoiceAnalysisFilters parses POST-shaped payloads', () => {
+    expect(normalizeInvoiceAnalysisFilters({ yearMonth: '2026-03', accountNumber: '  X1 ' })).toEqual({
+      yearMonth: '2026-03',
+      accountNumber: 'X1',
+    })
+    expect(normalizeInvoiceAnalysisFilters({ year: '2026', month: 3, accountNumber: '  X1 ' })).toEqual({
+      year: 2026,
+      months: [3],
+      accountNumber: 'X1',
+    })
+    expect(normalizeInvoiceAnalysisFilters({ months: [1, 6, 1], year: 2025 })).toEqual({
+      year: 2025,
+      months: [1, 6],
+    })
+  })
+
+  it('filterInvoiceRecords applies multiple calendar months', () => {
+    const rows = [
+      invoiceRow({ 'Invoice Date': '2025-01-10', 'Invoice Number': '1' }),
+      invoiceRow({ 'Invoice Date': '2025-03-05', 'Invoice Number': '2' }),
+      invoiceRow({ 'Invoice Date': '2025-06-01', 'Invoice Number': '3' }),
+    ]
+    const out = filterInvoiceRecords(rows, { year: 2025, months: [1, 6] })
+    expect(out.map((r) => r['Invoice Number'])).toEqual(['1', '3'])
   })
 })
 

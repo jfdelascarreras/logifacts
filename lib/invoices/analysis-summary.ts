@@ -53,6 +53,15 @@ export type InvoiceAnalysisSummary = {
     costAccessorials: number
     costSurcharges: number
   }>
+  /** Daily spend split by UPS account number (same cost rules as `dailySpend`). */
+  dailySpendByAccount: Array<{
+    date: string
+    accountNumber: string
+    totalCost: number
+    costFuel: number
+    costAccessorials: number
+    costSurcharges: number
+  }>
   category2VolumeCpp: Array<{
     category2: string
     totalVolume: number
@@ -72,6 +81,226 @@ export type InvoiceAnalysisSummary = {
     totalCost: number
     totalCpp: number
   }>
+  /** Per UPS invoice number + account; same cost splits as monthly/daily aggregates. */
+  spendByInvoice: Array<{
+    accountNumber: string
+    invoiceNumber: string
+    invoiceDate: string | null
+    totalCost: number
+    costFuel: number
+    costAccessorials: number
+    costSurcharges: number
+  }>
+  /** Present when analysis was run via POST (full unfiltered dimensions for filter UI). */
+  filterMeta?: InvoiceAnalysisFilterMeta
+  /** Echo of server-side filters used for this summary (subset view when any filter is active). */
+  appliedFilters?: InvoiceAnalysisFilters
+}
+
+export type InvoiceAnalysisFilters = {
+  year?: number | null
+  /** One or more calendar months (1–12) present in invoice data; combined with `year` when set. */
+  months?: number[] | null
+  /** Single invoice month as YYYY-MM (legacy; prefer `months` + `year`). */
+  yearMonth?: string | null
+  accountNumber?: string | null
+}
+
+export type InvoiceAnalysisFilterMeta = {
+  years: number[]
+  /** Distinct YYYY-MM from parsed invoice dates, newest first. */
+  yearMonths: string[]
+  accountNumbers: string[]
+}
+
+export function isInvoiceYearMonthKey(value: string | null | undefined): boolean {
+  if (!value || typeof value !== 'string') return false
+  return /^\d{4}-\d{2}$/.test(value.trim())
+}
+
+export function normalizedMonthNumbers(months: unknown): number[] {
+  if (!Array.isArray(months)) return []
+  const out: number[] = []
+  for (const x of months) {
+    const n = Number(x)
+    if (!Number.isFinite(n)) continue
+    const m = Math.trunc(n)
+    if (m >= 1 && m <= 12) out.push(m)
+  }
+  return [...new Set(out)].sort((a, b) => a - b)
+}
+
+export function hasActiveInvoiceFilters(f: InvoiceAnalysisFilters | null | undefined): boolean {
+  if (!f) return false
+  if (normalizedMonthNumbers(f.months).length > 0) return true
+  if (String(f.yearMonth ?? '').trim() && isInvoiceYearMonthKey(f.yearMonth)) return true
+  if (f.year != null && Number.isFinite(Number(f.year))) return true
+  if (String(f.accountNumber ?? '').trim()) return true
+  return false
+}
+
+/** Parse `filters` from POST JSON; ignores unknown keys. */
+export function normalizeInvoiceAnalysisFilters(raw: unknown): InvoiceAnalysisFilters {
+  if (raw == null || typeof raw !== 'object') return {}
+  const o = raw as Record<string, unknown>
+  const out: InvoiceAnalysisFilters = {}
+  const ymRaw = o.yearMonth ?? o.year_month
+  if (ymRaw != null && String(ymRaw).trim() !== '') {
+    const ym = String(ymRaw).trim()
+    if (isInvoiceYearMonthKey(ym)) out.yearMonth = ym
+  }
+  if (o.year != null && String(o.year).trim() !== '') {
+    const n = Number(o.year)
+    if (Number.isFinite(n)) out.year = n
+  }
+  const monthsFromArray = normalizedMonthNumbers(o.months)
+  if (monthsFromArray.length) {
+    out.months = monthsFromArray
+  }
+  if (!out.months?.length && !out.yearMonth && o.month != null && String(o.month).trim() !== '') {
+    const m = Number(o.month)
+    if (Number.isFinite(m)) {
+      const mo = Math.trunc(m)
+      if (mo >= 1 && mo <= 12) out.months = [mo]
+    }
+  }
+  if (o.accountNumber != null && String(o.accountNumber).trim() !== '') {
+    out.accountNumber = String(o.accountNumber).trim()
+  }
+  return out
+}
+
+/** Distinct filter dimensions from the full (unfiltered) record set. */
+export function buildInvoiceAnalysisFilterMeta(records: InvoiceRecord[]): InvoiceAnalysisFilterMeta {
+  const years = new Set<number>()
+  const yearMonths = new Set<string>()
+  const accounts = new Set<string>()
+  for (const rec of records) {
+    const dk = parseInvoiceDateKey(rec['Invoice Date'])
+    if (dk) {
+      years.add(Number(dk.slice(0, 4)))
+      yearMonths.add(dk.slice(0, 7))
+    }
+    const acc = String(rec['Account Number'] ?? '').trim()
+    if (acc) accounts.add(acc)
+  }
+  return {
+    years: Array.from(years).sort((a, b) => b - a),
+    yearMonths: Array.from(yearMonths).sort((a, b) => b.localeCompare(a)),
+    accountNumbers: Array.from(accounts).sort((a, b) => a.localeCompare(b)),
+  }
+}
+
+/** Parse `monthLabel` like "March 2025" from `computeInvoiceAnalysisSummary` monthlySpend keys. */
+export function yearMonthKeyFromEngineMonthLabel(monthLabel: string): string | null {
+  const m = String(monthLabel ?? '')
+    .trim()
+    .match(/^(.+?)\s+(\d{4})$/)
+  if (!m) return null
+  const monthName = m[1].trim()
+  const yearNum = Number(m[2])
+  if (!Number.isFinite(yearNum)) return null
+  const d = new Date(`${monthName} 1, ${yearNum}`)
+  if (Number.isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const mo = d.getMonth() + 1
+  return `${y}-${String(mo).padStart(2, '0')}`
+}
+
+/**
+ * Builds complete filter dropdown dimensions: prefers `fromRecords` (full CSV scan) when present,
+ * and fills gaps from saved summary slices so cached GET rows still populate years / YYYY-MM / accounts.
+ */
+export function mergeInvoiceAnalysisFilterMeta(
+  fromRecords: InvoiceAnalysisFilterMeta | null | undefined,
+  summarySlice: {
+    dailySpend?: ReadonlyArray<{ date?: string }>
+    monthlySpend?: ReadonlyArray<{ month?: string }>
+    spendByInvoice?: ReadonlyArray<{ accountNumber?: string }>
+    dailySpendByAccount?: ReadonlyArray<{ accountNumber?: string }>
+  }
+): InvoiceAnalysisFilterMeta {
+  const years = new Set<number>()
+  const yearMonths = new Set<string>()
+  const accountNumbers = new Set<string>()
+
+  for (const y of fromRecords?.years ?? []) {
+    if (typeof y === 'number' && Number.isFinite(y)) years.add(y)
+  }
+  for (const ym of fromRecords?.yearMonths ?? []) {
+    if (typeof ym === 'string' && isInvoiceYearMonthKey(ym)) yearMonths.add(ym.slice(0, 7))
+  }
+  for (const a of fromRecords?.accountNumbers ?? []) {
+    if (typeof a === 'string' && a.trim()) accountNumbers.add(a.trim())
+  }
+
+  for (const d of summarySlice.dailySpend ?? []) {
+    const date = typeof d.date === 'string' ? d.date : ''
+    if (date.length >= 7) {
+      yearMonths.add(date.slice(0, 7))
+      const y = Number(date.slice(0, 4))
+      if (Number.isFinite(y)) years.add(y)
+    }
+  }
+
+  for (const row of summarySlice.monthlySpend ?? []) {
+    const label = typeof row.month === 'string' ? row.month : ''
+    const ym = yearMonthKeyFromEngineMonthLabel(label)
+    if (ym) {
+      yearMonths.add(ym)
+      const y = Number(ym.slice(0, 4))
+      if (Number.isFinite(y)) years.add(y)
+    }
+  }
+
+  for (const r of summarySlice.spendByInvoice ?? []) {
+    const a = typeof r.accountNumber === 'string' ? r.accountNumber.trim() : ''
+    if (a) accountNumbers.add(a)
+  }
+
+  for (const r of summarySlice.dailySpendByAccount ?? []) {
+    const a = typeof r.accountNumber === 'string' ? r.accountNumber.trim() : ''
+    if (a) accountNumbers.add(a)
+  }
+
+  return {
+    years: Array.from(years).sort((a, b) => b - a),
+    yearMonths: Array.from(yearMonths).sort((a, b) => b.localeCompare(a)),
+    accountNumbers: Array.from(accountNumbers).sort((a, b) => a.localeCompare(b)),
+  }
+}
+
+export function filterInvoiceRecords(
+  records: InvoiceRecord[],
+  filters: InvoiceAnalysisFilters
+): InvoiceRecord[] {
+  if (!hasActiveInvoiceFilters(filters)) return records
+  const wantYm = String(filters.yearMonth ?? '').trim()
+  const wantYear =
+    filters.year != null && Number.isFinite(Number(filters.year)) ? Number(filters.year) : null
+  const wantMonths = new Set(normalizedMonthNumbers(filters.months))
+  const wantAcc = String(filters.accountNumber ?? '').trim().toLowerCase()
+
+  return records.filter((rec) => {
+    const dk = parseInvoiceDateKey(rec['Invoice Date'])
+    if (wantYm && isInvoiceYearMonthKey(wantYm)) {
+      if (!dk || dk.slice(0, 7) !== wantYm) return false
+    } else {
+      if (wantYear != null) {
+        if (!dk || !dk.startsWith(`${wantYear}-`)) return false
+      }
+      if (wantMonths.size > 0) {
+        if (!dk) return false
+        const monthNum = Number(dk.slice(5, 7))
+        if (!wantMonths.has(monthNum)) return false
+      }
+    }
+    if (wantAcc) {
+      const acc = String(rec['Account Number'] ?? '').trim().toLowerCase()
+      if (acc !== wantAcc) return false
+    }
+    return true
+  })
 }
 
 /** One UPS invoice has many charge lines — max Package Quantity per logical shipment. */
@@ -224,14 +453,35 @@ export function computeInvoiceAnalysisSummary(
     },
     monthlySpend: [],
     dailySpend: [],
+    dailySpendByAccount: [],
     category2VolumeCpp: [],
     modeVolumeCpp: [],
     weightBucketVolume: [],
+    spendByInvoice: [],
   }
 
   let sumBilledWeight = 0
   let sumEnteredWeight = 0
+  const invoiceSpend = new Map<
+    string,
+    {
+      totalCost: number
+      costFuel: number
+      costAccessorials: number
+      costSurcharges: number
+      minDate: string | null
+    }
+  >()
   const dailySpend = new Map<
+    string,
+    {
+      totalCost: number
+      costFuel: number
+      costAccessorials: number
+      costSurcharges: number
+    }
+  >()
+  const dailySpendByAccount = new Map<
     string,
     {
       totalCost: number
@@ -338,6 +588,7 @@ export function computeInvoiceAnalysisSummary(
     summary.byService[service].totalInvoiceAmount += invoiceAmount
 
     const dateKey = parseInvoiceDateKey(rec['Invoice Date'])
+    const accountDim = String(rec['Account Number'] ?? '').trim() || '(no account)'
     if (dateKey) {
       const daily = dailySpend.get(dateKey) ?? {
         totalCost: 0,
@@ -352,6 +603,21 @@ export function computeInvoiceAnalysisSummary(
         daily.costSurcharges += netAmount
       }
       dailySpend.set(dateKey, daily)
+
+      const daKey = `${dateKey}\t${accountDim}`
+      const dAcc = dailySpendByAccount.get(daKey) ?? {
+        totalCost: 0,
+        costFuel: 0,
+        costAccessorials: 0,
+        costSurcharges: 0,
+      }
+      dAcc.totalCost += netAmount
+      if (isFuelRow) dAcc.costFuel += netAmount
+      if (chargeClassification === 'ACC' && !isExcludedAccCat) dAcc.costAccessorials += netAmount
+      if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
+        dAcc.costSurcharges += netAmount
+      }
+      dailySpendByAccount.set(daKey, dAcc)
 
       const [yearText, monthText] = dateKey.split('-')
       const yearNum = Number(yearText)
@@ -374,7 +640,54 @@ export function computeInvoiceAnalysisSummary(
       }
       monthSpend.set(monthLabel, monthAgg)
     }
+
+    const invLabel = String(rec['Invoice Number'] ?? '').trim() || '(no invoice)'
+    const invKey = `${accountDim}\t${invLabel}`
+    let invAgg = invoiceSpend.get(invKey)
+    if (!invAgg) {
+      invAgg = {
+        totalCost: 0,
+        costFuel: 0,
+        costAccessorials: 0,
+        costSurcharges: 0,
+        minDate: null,
+      }
+      invoiceSpend.set(invKey, invAgg)
+    }
+    invAgg.totalCost += netAmount
+    if (isFuelRow) invAgg.costFuel += netAmount
+    if (chargeClassification === 'ACC' && !isExcludedAccCat) invAgg.costAccessorials += netAmount
+    if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
+      invAgg.costSurcharges += netAmount
+    }
+    if (dateKey) {
+      invAgg.minDate =
+        invAgg.minDate === null || dateKey < invAgg.minDate ? dateKey : invAgg.minDate
+    }
   }
+
+  summary.spendByInvoice = Array.from(invoiceSpend.entries())
+    .map(([key, v]) => {
+      const tab = key.indexOf('\t')
+      const accountNumber = tab >= 0 ? key.slice(0, tab) : '(no account)'
+      const invoiceNumber = tab >= 0 ? key.slice(tab + 1) : key
+      return {
+        accountNumber,
+        invoiceNumber,
+        invoiceDate: v.minDate,
+        totalCost: v.totalCost,
+        costFuel: v.costFuel,
+        costAccessorials: v.costAccessorials,
+        costSurcharges: v.costSurcharges,
+      }
+    })
+    .sort((a, b) => {
+      const da = a.invoiceDate ?? ''
+      const db = b.invoiceDate ?? ''
+      if (da !== db) return db.localeCompare(da)
+      if (a.accountNumber !== b.accountNumber) return a.accountNumber.localeCompare(b.accountNumber)
+      return a.invoiceNumber.localeCompare(b.invoiceNumber)
+    })
 
   const packageQtyByShipment = new Map<string, number>()
   for (const rec of records) {
@@ -421,6 +734,24 @@ export function computeInvoiceAnalysisSummary(
       costSurcharges: values.costSurcharges,
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
+
+  summary.dailySpendByAccount = Array.from(dailySpendByAccount.entries())
+    .map(([key, values]) => {
+      const tab = key.indexOf('\t')
+      const date = tab >= 0 ? key.slice(0, tab) : key
+      const accountNumber = tab >= 0 ? key.slice(tab + 1) : '(no account)'
+      return {
+        date,
+        accountNumber,
+        totalCost: values.totalCost,
+        costFuel: values.costFuel,
+        costAccessorials: values.costAccessorials,
+        costSurcharges: values.costSurcharges,
+      }
+    })
+    .sort((a, b) =>
+      a.date !== b.date ? a.date.localeCompare(b.date) : a.accountNumber.localeCompare(b.accountNumber)
+    )
 
   summary.category2VolumeCpp = Array.from(category2Agg.entries())
     .map(([category2, values]) => ({

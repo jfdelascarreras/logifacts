@@ -85,9 +85,27 @@ function deltaText(current: number, previous: number): string {
   return `${sign}${formatCompact(diff)}`
 }
 
-function formatMonthYear(dateStr: string): string {
+function formatMonthYear(dateStr: string, compact: boolean): string {
   const dt = new Date(`${dateStr}T00:00:00Z`)
+  if (compact) {
+    return dt.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
+  }
   return dt.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+function pickEvenlySpacedMonthTicks<T extends { idx: number }>(ticks: T[], maxLabels: number): T[] {
+  if (ticks.length <= maxLabels) return ticks
+  const n = ticks.length
+  const want = Math.min(maxLabels, n)
+  const positions = new Set<number>()
+  positions.add(0)
+  positions.add(n - 1)
+  const inner = Math.max(0, want - 2)
+  for (let j = 1; j <= inner; j += 1) {
+    const i = Math.round((j / (inner + 1)) * (n - 1))
+    positions.add(Math.min(n - 1, Math.max(0, i)))
+  }
+  return [...positions].sort((a, b) => a - b).map((i) => ticks[i])
 }
 
 function formatCurrency(value: number): string {
@@ -142,18 +160,14 @@ function Sparkline({
       monthTickByLabel.set(monthKey, i)
     }
   }
+  const labelCompact = dates.length > 90 || monthTickByLabel.size > 10
   const monthTicksRaw = Array.from(monthTickByLabel.entries()).map(([monthKey, idx]) => ({
-    label: formatMonthYear(`${monthKey}-01`),
+    label: formatMonthYear(`${monthKey}-01`, labelCompact),
     idx,
     leftPct: (idx / Math.max(1, dates.length - 1)) * 100,
   }))
-  let monthTicks = monthTicksRaw
-  if (monthTicksRaw.length > 1) {
-    // Keep labels spaced so they don't overlap visually.
-    const maxLabels = 7
-    const step = Math.max(1, Math.ceil(monthTicksRaw.length / maxLabels))
-    monthTicks = monthTicksRaw.filter((_, i) => i % step === 0 || i === monthTicksRaw.length - 1)
-  }
+  const monthTicks =
+    monthTicksRaw.length > 1 ? pickEvenlySpacedMonthTicks(monthTicksRaw, 7) : monthTicksRaw
 
   const hoveredPoint = hoveredIdx !== null ? points[hoveredIdx] : null
   const hoveredDate = hoveredIdx !== null ? dates[hoveredIdx] : null
@@ -161,6 +175,15 @@ function Sparkline({
 
   return (
     <div className="space-y-1">
+      <div aria-live="polite" className="min-h-[1.35rem] text-[11px] text-muted-foreground">
+        {hoveredDate && hoveredValue !== null ? (
+          <>
+            {hoveredDate}:{' '}
+            <span className="font-medium text-foreground">{formatCurrency(hoveredValue)}</span>
+            <span className="text-muted-foreground"> ({metricTitle})</span>
+          </>
+        ) : null}
+      </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
         {points.map((point, idx) => {
           const zoneWidth = idx === 0 ? 12 : Math.max(8, point.x - points[idx - 1].x)
@@ -172,14 +195,14 @@ function Sparkline({
               width={zoneWidth}
               height={height}
               fill="transparent"
+              tabIndex={-1}
+              aria-label={`${metricTitle}, ${dates[idx]}, ${formatCurrency(values[idx] ?? 0)}`}
               onMouseEnter={() => setHoveredIdx(idx)}
               onMouseMove={() => setHoveredIdx(idx)}
               onFocus={() => setHoveredIdx(idx)}
               onBlur={() => setHoveredIdx(null)}
               onMouseLeave={() => setHoveredIdx((prev) => (prev === idx ? null : prev))}
-            >
-              <title>{`${metricTitle}\n${dates[idx]}: ${formatCurrency(values[idx] ?? 0)}`}</title>
-            </rect>
+            />
           )
         })}
         {hoveredPoint ? (
@@ -217,12 +240,7 @@ function Sparkline({
           </>
         ) : null}
       </svg>
-      {hoveredDate && hoveredValue !== null ? (
-        <div className="text-[11px] text-muted-foreground">
-          {hoveredDate}: <span className="font-medium text-foreground">{formatCurrency(hoveredValue)}</span>
-        </div>
-      ) : null}
-      <div className="relative h-4 text-[10px] text-muted-foreground">
+      <div className="relative mt-1 h-6 text-[11px] leading-tight text-muted-foreground">
         {monthTicks.map((tick) => (
           <span
             key={`${tick.label}-${tick.idx}-${tick.leftPct.toFixed(2)}`}
