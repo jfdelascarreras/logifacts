@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 import { Loader2 } from 'lucide-react'
 
@@ -17,6 +18,7 @@ import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import {
+  hasActiveInvoiceFilters,
   isInvoiceYearMonthKey,
   mergeInvoiceAnalysisFilterMeta,
   normalizedMonthNumbers,
@@ -129,7 +131,17 @@ function buildFiltersBody(
   return f
 }
 
+type ApplySummaryOptions = {
+  /**
+   * When true, copy `appliedFilters` from the summary into the filter UI.
+   * Callers should set this only when the **request** included active filters (e.g. `hasActiveInvoiceFilters(filters)` on POST),
+   * so unfiltered POSTs never repopulate controls from a stale `applied_filters` payload.
+   */
+  hydrateFiltersFromApplied?: boolean
+}
+
 export function PremiumDashboard() {
+  const pathname = usePathname()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([])
   const [filterMeta, setFilterMeta] = useState<InvoiceAnalysisFilterMeta>(emptyFilterMeta)
@@ -149,7 +161,7 @@ export function PremiumDashboard() {
   const [fromCache, setFromCache] = useState(false)
 
   const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
-    const res = await fetch('/api/invoices/analyze', { method: 'GET' })
+    const res = await fetch('/api/invoices/analyze', { method: 'GET', cache: 'no-store' })
     const json = await res.json()
     if (!res.ok) {
       throw new Error(json.error || 'Failed to load analysis history.')
@@ -159,8 +171,16 @@ export function PremiumDashboard() {
     return list
   }, [])
 
+  /** Clear filter widgets whenever this page is shown (covers client navigations + remounts). */
+  useEffect(() => {
+    if (!pathname?.includes('premium-analysis')) return
+    setFilterYear('')
+    setFilterMonths([])
+    setFilterAccount('')
+  }, [pathname])
+
   /** Initial page load: read cached summary only (fast). Avoids timeouts from re-parsing every CSV. */
-  const applySummaryPayload = useCallback((raw: Summary & Record<string, unknown>) => {
+  const applySummaryPayload = useCallback((raw: Summary & Record<string, unknown>, options?: ApplySummaryOptions) => {
     if (!raw?.measures) return
     const r = raw as Record<string, unknown>
     const fm = (raw.filterMeta ?? r.filter_meta) as InvoiceAnalysisFilterMeta | undefined
@@ -190,7 +210,10 @@ export function PremiumDashboard() {
     })
     setFilterMeta(mergedFilterMeta)
     const applied = (raw.appliedFilters ?? r.applied_filters) as InvoiceAnalysisFilters | undefined
-    if (applied && typeof applied === 'object') {
+    const hydrateFilters =
+      options?.hydrateFiltersFromApplied === true &&
+      Boolean(applied && typeof applied === 'object' && hasActiveInvoiceFilters(applied))
+    if (hydrateFilters && applied && typeof applied === 'object') {
       const ym =
         typeof applied.yearMonth === 'string' && isInvoiceYearMonthKey(applied.yearMonth)
           ? applied.yearMonth
@@ -242,7 +265,9 @@ export function PremiumDashboard() {
       const list = await loadHistory()
       const latest = list[0]
       if (latest?.summary?.measures) {
-        applySummaryPayload(latest.summary as Summary & Record<string, unknown>)
+        applySummaryPayload(latest.summary as Summary & Record<string, unknown>, {
+          hydrateFiltersFromApplied: false,
+        })
         setFromCache(true)
       } else {
         setSummary(null)
@@ -265,6 +290,7 @@ export function PremiumDashboard() {
     try {
       const res = await fetch('/api/invoices/analyze', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(filters != null && Object.keys(filters).length > 0 ? { filters } : {}),
       })
@@ -273,7 +299,9 @@ export function PremiumDashboard() {
         throw new Error(json.error || 'Failed to refresh analysis.')
       }
       if (json.summary?.measures) {
-        applySummaryPayload(json.summary as Summary & Record<string, unknown>)
+        applySummaryPayload(json.summary as Summary & Record<string, unknown>, {
+          hydrateFiltersFromApplied: hasActiveInvoiceFilters(filters),
+        })
         setFromCache(false)
       }
       await loadHistory()
@@ -337,7 +365,7 @@ export function PremiumDashboard() {
       const ce = e as CustomEvent<{ summary?: unknown }>
       const raw = ce.detail?.summary as (Summary & Record<string, unknown>) | undefined
       if (raw?.measures) {
-        applySummaryPayload(raw)
+        applySummaryPayload(raw, { hydrateFiltersFromApplied: false })
         setFromCache(false)
         void loadHistory()
       }
@@ -898,55 +926,59 @@ export function PremiumDashboard() {
           />
         ) : null}
 
-        {history.length ? (
-          <Card className="border-accent/25 bg-card">
-            <CardHeader>
-              <CardTitle>Analyzed CSV History</CardTitle>
-              <CardDescription>
-                All analyzed uploads for your user, newest first.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {history.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-2 rounded-md border border-border bg-background p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <div className="font-medium">Upload ID: {item.invoice_upload_id}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Updated: {new Date(item.updated_at).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                      <div>
-                        <div className="text-muted-foreground">Rows</div>
-                        <div className="text-foreground">{item.summary?.totalRows ?? 0}</div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">Total Cost</div>
-                        <div className="text-foreground">
-                          {item.summary?.measures?.totalCost?.toFixed(2) ?? '0.00'}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">Fuel</div>
-                        <div className="text-foreground">
-                          {item.summary?.measures?.fuelCost?.toFixed(2) ?? '0.00'}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">Packages</div>
-                        <div className="text-foreground">{item.summary?.measures?.totalPackages ?? 0}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        {(() => {
+          const latestInvoices = history[0]?.summary?.spendByInvoice
+          if (!Array.isArray(latestInvoices) || latestInvoices.length === 0) return null
+          return (
+            <Card className="border-accent/25 bg-card">
+              <CardHeader>
+                <CardTitle>Invoices Analyzed</CardTitle>
+                <CardDescription>
+                  {latestInvoices.length.toLocaleString()} invoice{latestInvoices.length !== 1 ? 's' : ''} from the latest run · {new Date(history[0].updated_at).toLocaleString()}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Invoices analyzed table"
+                >
+                  <table className="w-full min-w-[420px] text-left text-sm">
+                    <thead className="text-muted-foreground">
+                      <tr className="border-b border-border">
+                        <th className="px-3 py-2 font-medium">Invoice #</th>
+                        <th className="px-3 py-2 font-medium">Invoice Date</th>
+                        <th className="px-3 py-2 font-medium text-right">Total Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {latestInvoices.map((inv) => (
+                        <tr key={`${inv.accountNumber}-${inv.invoiceNumber}`} className="border-b border-border">
+                          <td className="px-3 py-2 font-medium text-foreground">{inv.invoiceNumber}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{inv.invoiceDate ?? '—'}</td>
+                          <td className="px-3 py-2 text-right text-foreground">
+                            {inv.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-border bg-muted/30 font-semibold">
+                        <td className="px-3 py-2 text-foreground" colSpan={2}>Total</td>
+                        <td className="px-3 py-2 text-right text-foreground">
+                          {latestInvoices
+                            .reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0)
+                            .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()}
       </div>
     </div>
   )

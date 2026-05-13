@@ -129,21 +129,23 @@ export async function POST(request: Request) {
     net_spend: d.totalCost,
   }))
 
+  // Write daily-spend cache only when no filters are active.
+  // Failures here are non-fatal: the dashboard reads invoice_upload_analyses, not this table.
+  // A missing `account_number` column (migration not yet applied) should not block the refresh.
+  let spendSyncWarning: string | undefined
   if (!filtersActive) {
     const { error: clearSpendError } = await supabase
       .from('invoice_spend_by_date')
       .delete()
       .eq('user_id', user.id)
     if (clearSpendError) {
-      return NextResponse.json({ error: clearSpendError.message }, { status: 400 })
-    }
-
-    if (spendRows.length) {
+      spendSyncWarning = `daily-spend clear: ${clearSpendError.message}`
+    } else if (spendRows.length) {
       const { error: spendUpsertError } = await supabase
         .from('invoice_spend_by_date')
         .upsert(spendRows, { onConflict: 'user_id,invoice_date,account_number' })
       if (spendUpsertError) {
-        return NextResponse.json({ error: spendUpsertError.message }, { status: 400 })
+        spendSyncWarning = `daily-spend upsert: ${spendUpsertError.message}`
       }
     }
   }
@@ -166,11 +168,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: upsertError.message }, { status: 400 })
   }
 
-  return NextResponse.json({
-    uploadId: latestUploadId,
-    uploadsAnalyzed: uploads.length,
-    summary,
-  })
+  return NextResponse.json(
+    {
+      uploadId: latestUploadId,
+      uploadsAnalyzed: uploads.length,
+      summary,
+      ...(spendSyncWarning ? { spendSyncWarning } : {}),
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, no-store, max-age=0',
+      },
+    }
+  )
 }
 
 export async function GET() {
@@ -196,6 +206,10 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  return NextResponse.json({ analyses: data ?? [] })
+  return NextResponse.json({ analyses: data ?? [] }, {
+    headers: {
+      'Cache-Control': 'private, no-store, max-age=0',
+    },
+  })
 }
 
