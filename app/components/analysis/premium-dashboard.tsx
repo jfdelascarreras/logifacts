@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
-import { Loader2 } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -397,6 +397,53 @@ export function PremiumDashboard() {
     { totalCost: 0, costFuel: 0, costAccessorials: 0, costSurcharges: 0 }
   )
 
+  const accountBreakdown = useMemo(() => {
+    const rows = summary?.dailySpendByAccount ?? []
+    if (rows.length === 0) return []
+    const map = new Map<string, number>()
+    for (const row of rows) {
+      map.set(row.accountNumber, (map.get(row.accountNumber) ?? 0) + row.totalCost)
+    }
+    const grandTotal = Array.from(map.values()).reduce((s, v) => s + v, 0)
+    return Array.from(map.entries())
+      .map(([accountNumber, totalCost]) => ({
+        accountNumber,
+        totalCost,
+        pct: grandTotal > 0 ? (totalCost / grandTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+  }, [summary?.dailySpendByAccount])
+
+  function exportSpendByInvoiceToCsv(invoices: NonNullable<Summary['spendByInvoice']>, runDate: string) {
+    const fmt = (n: number) => n.toFixed(2)
+    const escape = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v)
+    const headers = ['Account Number', 'Invoice #', 'Invoice Date', 'Total Cost', 'Cost - Fuel', 'Cost - Accessorials', 'Cost - Surcharges']
+    const rows = invoices.map((inv) => [
+      escape(inv.accountNumber),
+      escape(inv.invoiceNumber),
+      escape(inv.invoiceDate ?? ''),
+      fmt(inv.totalCost),
+      fmt(inv.costFuel),
+      fmt(inv.costAccessorials),
+      fmt(inv.costSurcharges),
+    ])
+    const totalRow = [
+      'Total', '', '',
+      fmt(invoices.reduce((s, i) => s + i.totalCost, 0)),
+      fmt(invoices.reduce((s, i) => s + i.costFuel, 0)),
+      fmt(invoices.reduce((s, i) => s + i.costAccessorials, 0)),
+      fmt(invoices.reduce((s, i) => s + i.costSurcharges, 0)),
+    ]
+    const csv = [headers, ...rows, totalRow].map((r) => r.join(',')).join('\r\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `invoices-analyzed-${runDate.slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="min-h-svh w-full bg-background px-4 py-8 text-foreground sm:py-10">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
@@ -734,6 +781,71 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
+        {accountBreakdown.length > 1 ? (
+          <Card className="border-accent/25 bg-card">
+            <CardHeader>
+              <CardTitle>Cost by Account</CardTitle>
+              <CardDescription>Total spend split by UPS account number</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                tabIndex={0}
+                role="region"
+                aria-label="Cost by account table"
+              >
+                <table className="w-full min-w-[360px] text-left text-sm">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 font-medium">Account Number</th>
+                      <th className="px-3 py-2 font-medium text-right">Total Cost</th>
+                      <th className="px-3 py-2 font-medium text-right">% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountBreakdown.map((row) => {
+                      const isTruncated = /^[+-]?\d+\.?\d*[eE][+\-]?\d+$/.test(row.accountNumber)
+                      return (
+                      <tr key={row.accountNumber} className="border-b border-border">
+                        <td className="px-3 py-2 font-medium text-foreground">
+                          <span>{row.accountNumber}</span>
+                          {isTruncated && (
+                            <span
+                              className="ml-2 rounded bg-destructive/15 px-1.5 py-0.5 text-xs font-normal text-destructive"
+                              title="Excel converted this account number to scientific notation when exporting the CSV. The original digits cannot be recovered — re-export the CSV with the Account Number column formatted as Text."
+                            >
+                              truncated by Excel
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-foreground">
+                          {row.totalCost.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-3 py-2 text-right text-foreground">{row.pct.toFixed(1)}%</td>
+                      </tr>
+                    )})}
+
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border bg-muted/30 font-semibold">
+                      <td className="px-3 py-2 text-foreground">Total</td>
+                      <td className="px-3 py-2 text-right text-foreground">
+                        {accountBreakdown
+                          .reduce((s, r) => s + r.totalCost, 0)
+                          .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-2 text-right text-foreground">100.0%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {summary?.monthlySpend?.length ? (
           <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
             <CardHeader>
@@ -974,6 +1086,18 @@ export function PremiumDashboard() {
                       </tr>
                     </tfoot>
                   </table>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => exportSpendByInvoiceToCsv(latestInvoices, history[0].updated_at)}
+                  >
+                    <Download className="size-4" aria-hidden />
+                    Export to Excel
+                  </Button>
                 </div>
               </CardContent>
             </Card>

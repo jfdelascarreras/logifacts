@@ -3,7 +3,7 @@
  * Kept deterministic for accuracy tests / golden proofs.
  */
 import type { InvoiceRecord } from './csv'
-import { toNumber } from './csv'
+import { normalizeAccountNumberString, toNumber } from './csv'
 
 export type ChargeDescriptionMappingRow = {
   charge_description: string
@@ -181,7 +181,7 @@ export function buildInvoiceAnalysisFilterMeta(records: InvoiceRecord[]): Invoic
       years.add(Number(dk.slice(0, 4)))
       yearMonths.add(dk.slice(0, 7))
     }
-    const acc = String(rec['Account Number'] ?? '').trim()
+    const acc = normalizeAccountNumberString(rec['Account Number'])
     if (acc) accounts.add(acc)
   }
   return {
@@ -296,7 +296,7 @@ export function filterInvoiceRecords(
       }
     }
     if (wantAcc) {
-      const acc = String(rec['Account Number'] ?? '').trim().toLowerCase()
+      const acc = normalizeAccountNumberString(rec['Account Number']).toLowerCase()
       if (acc !== wantAcc) return false
     }
     return true
@@ -588,7 +588,7 @@ export function computeInvoiceAnalysisSummary(
     summary.byService[service].totalInvoiceAmount += invoiceAmount
 
     const dateKey = parseInvoiceDateKey(rec['Invoice Date'])
-    const accountDim = String(rec['Account Number'] ?? '').trim() || '(no account)'
+    const accountDim = normalizeAccountNumberString(rec['Account Number']) || '(no account)'
     if (dateKey) {
       const daily = dailySpend.get(dateKey) ?? {
         totalCost: 0,

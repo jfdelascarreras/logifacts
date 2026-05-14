@@ -75,15 +75,24 @@ export function InvoiceCsvUpload() {
 
       if (existingError) throw existingError
 
-      const existingNames = new Set((existingUploads ?? []).map((r) => r.original_file_name))
+      // Primary dedup: by content SHA-256 (catches same bytes under any file name).
       const existingHashes = new Set(
         (existingUploads ?? [])
           .map((r) => r.content_sha256)
           .filter((h): h is string => typeof h === 'string' && h.length > 0)
       )
+      // Fallback dedup: by file name, but only for uploads that have no hash yet
+      // (uploaded before the sha256 column was added, or before Refresh Analysis was run).
+      // This prevents re-uploading those files until their hash is backfilled by the
+      // analysis engine on the next Refresh Analysis run.
+      const existingNamesWithoutHash = new Set(
+        (existingUploads ?? [])
+          .filter((r) => !r.content_sha256 || String(r.content_sha256).length === 0)
+          .map((r) => r.original_file_name)
+      )
 
-      const seenNamesInBatch = new Set<string>()
       const seenHashesInBatch = new Set<string>()
+      const seenNamesInBatch = new Set<string>()
 
       const insertedRows: Array<{
         user_id: string
@@ -94,16 +103,11 @@ export function InvoiceCsvUpload() {
         content_sha256: string
       }> = []
 
-      let skippedDuplicateName = 0
       let skippedDuplicateContent = 0
       let skippedOversized = 0
       let skippedEmpty = 0
-      for (const file of files) {
-        if (existingNames.has(file.name) || seenNamesInBatch.has(file.name)) {
-          skippedDuplicateName += 1
-          continue
-        }
 
+      for (const file of files) {
         if (file.size > maxBytes) {
           skippedOversized += 1
           continue
@@ -113,13 +117,17 @@ export function InvoiceCsvUpload() {
         const dedupeKey = normalizeCsvForDedupe(csvText)
         const contentSha256 = await sha256HexUtf8(dedupeKey)
 
+        // Skip if we've already seen this exact content (in DB or in this batch).
         if (existingHashes.has(contentSha256) || seenHashesInBatch.has(contentSha256)) {
           skippedDuplicateContent += 1
           continue
         }
+        // Fallback: skip if same name as an un-hashed existing upload or selected twice.
+        if (existingNamesWithoutHash.has(file.name) || seenNamesInBatch.has(file.name)) {
+          skippedDuplicateContent += 1
+          continue
+        }
 
-        // Apply UPS invoice header mapping by parsing each row using INVOICE_HEADERS.
-        // We store raw csv_text but row_count is based on mapped records.
         const mappedRecords = parseInvoiceCsvText(csvText)
         if (!mappedRecords.length) {
           skippedEmpty += 1
@@ -134,35 +142,33 @@ export function InvoiceCsvUpload() {
           status: 'uploaded',
           content_sha256: contentSha256,
         })
-        seenNamesInBatch.add(file.name)
         seenHashesInBatch.add(contentSha256)
+        seenNamesInBatch.add(file.name)
       }
 
       if (!insertedRows.length) {
         const parts: string[] = []
-        if (skippedDuplicateName > 0) {
-          parts.push(
-            `${skippedDuplicateName} file(s) skipped — same file name as an upload already on your account (or selected twice). Rename the file or remove the existing upload if you meant to replace it.`
-          )
-        }
         if (skippedDuplicateContent > 0) {
-          parts.push(
-            `${skippedDuplicateContent} file(s) skipped — identical invoice data already uploaded (same CSV content, even if the file name differs).`
+          parts.push(`${skippedDuplicateContent} identical to files already on your account`)
+        }
+        if (skippedOversized > 0) parts.push(`${skippedOversized} over 5 MB`)
+        if (skippedEmpty > 0) parts.push(`${skippedEmpty} empty or unreadable`)
+        const allDuplicates = skippedOversized === 0 && skippedEmpty === 0
+        setFiles([])
+        setWorkPhase('idle')
+        if (allDuplicates) {
+          setSuccess(
+            `All ${files.length} selected file(s) are already in your account — no new file content to upload. ` +
+            `Use Refresh analysis below to recompute with your existing files.`
+          )
+        } else {
+          setError(
+            parts.length > 0
+              ? `Nothing uploaded: ${parts.join('; ')}.`
+              : 'No files to upload. Choose CSV files and try again.'
           )
         }
-        if (skippedOversized > 0) {
-          parts.push(`${skippedOversized} file(s) over 5MB`)
-        }
-        if (skippedEmpty > 0) {
-          parts.push(
-            `${skippedEmpty} file(s) had no data rows after parsing (empty file, wrong format, or not comma-separated CSV)`
-          )
-        }
-        throw new Error(
-          parts.length > 0
-            ? parts.join(' ')
-            : 'No files to upload. Choose CSV files and try again.'
-        )
+        return
       }
 
       let insertedCount = 0
@@ -180,14 +186,12 @@ export function InvoiceCsvUpload() {
         insertedCount += chunk.length
       }
 
-      const skippedTotal =
-        skippedDuplicateName + skippedDuplicateContent + skippedOversized + skippedEmpty
+      const skippedTotal = skippedDuplicateContent + skippedOversized + skippedEmpty
       const uploadNote =
         `Uploaded ${insertedRows.length} file(s)${
           skippedTotal
             ? `, skipped ${skippedTotal} (${[
-                skippedDuplicateName && `${skippedDuplicateName} duplicate name`,
-                skippedDuplicateContent && `${skippedDuplicateContent} duplicate content`,
+                skippedDuplicateContent && `${skippedDuplicateContent} identical content`,
                 skippedOversized && `${skippedOversized} too large`,
                 skippedEmpty && `${skippedEmpty} empty/unreadable`,
               ]
@@ -263,8 +267,8 @@ export function InvoiceCsvUpload() {
               />
               {files.length ? (
                 <p id="invoice-csv-help" className="text-sm text-muted-foreground">
-                  Selected {files.length} file(s). UPS header mapping will be applied to each. Duplicate file names
-                  (or identical file contents) are skipped automatically. Many files upload in small batches.
+                  Selected {files.length} file(s). Files with identical content to existing uploads are skipped.
+                  Overlapping invoice rows across files are deduplicated automatically during analysis.
                 </p>
               ) : (
                 <p id="invoice-csv-help" className="text-sm text-muted-foreground">
