@@ -8,13 +8,14 @@ const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.htm
 
 export function LandingHero() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-32 left-1/2 h-[540px] w-[540px] -translate-x-1/2 rounded-full bg-secondary/30 blur-3xl" />
-          <div className="absolute -bottom-40 -left-20 h-[420px] w-[420px] rounded-full bg-accent/20 blur-3xl" />
-        </div>
+    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 left-1/2 h-[540px] w-[540px] -translate-x-1/2 rounded-full bg-secondary/30 blur-3xl" />
+        <div className="absolute -bottom-40 -left-20 h-[420px] w-[420px] rounded-full bg-accent/20 blur-3xl" />
+        <div className="absolute -bottom-40 -right-20 h-[420px] w-[420px] rounded-full bg-secondary/15 blur-3xl" />
+      </div>
 
+      <div>
         <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:gap-10 sm:px-6 sm:py-24">
           <header className="flex items-center justify-between gap-3">
             <Link href="/" className="shrink-0" aria-label="LogiFacts home">
