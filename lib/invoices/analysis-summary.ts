@@ -81,7 +81,7 @@ export type InvoiceAnalysisSummary = {
     totalCost: number
     totalCpp: number
   }>
-  /** Per UPS invoice number + account; same cost splits as monthly/daily aggregates. */
+  /** Per invoice number only (Club Colors / Python dashboard); account is display + may list multiple if data disagrees. */
   spendByInvoice: Array<{
     accountNumber: string
     invoiceNumber: string
@@ -95,6 +95,12 @@ export type InvoiceAnalysisSummary = {
   filterMeta?: InvoiceAnalysisFilterMeta
   /** Echo of server-side filters used for this summary (subset view when any filter is active). */
   appliedFilters?: InvoiceAnalysisFilters
+  /** Populated after ingest sanitization / dedupe (Premium Analysis CSV pipeline). */
+  ingestDiagnostics?: {
+    duplicateUploadRowsSkipped: number
+    duplicateChargeRowsDropped: number
+    rowsDroppedCriticalSciCorruption: number
+  }
 }
 
 export type InvoiceAnalysisFilters = {
@@ -255,7 +261,12 @@ export function mergeInvoiceAnalysisFilterMeta(
 
   for (const r of summarySlice.spendByInvoice ?? []) {
     const a = typeof r.accountNumber === 'string' ? r.accountNumber.trim() : ''
-    if (a) accountNumbers.add(a)
+    if (!a || a === '(no account)') continue
+    // spendByInvoice may join multiple distinct account numbers with ", " when one invoice appears under both.
+    for (const part of a.split(',')) {
+      const p = part.trim()
+      if (p && p !== '(no account)') accountNumbers.add(p)
+    }
   }
 
   for (const r of summarySlice.dailySpendByAccount ?? []) {
@@ -460,6 +471,9 @@ export function computeInvoiceAnalysisSummary(
     spendByInvoice: [],
   }
 
+  // Python: df["isSurcharge"] = df["Category 3"].isin([...])
+  const SURCHARGE_CATS = new Set(['FUEL SURCHARGE', 'ACCESSORIAL SURCHARGE', 'SURCHARGE'])
+
   let sumBilledWeight = 0
   let sumEnteredWeight = 0
   const invoiceSpend = new Map<
@@ -470,6 +484,7 @@ export function computeInvoiceAnalysisSummary(
       costAccessorials: number
       costSurcharges: number
       minDate: string | null
+      accountNumbers: Set<string>
     }
   >()
   const dailySpend = new Map<
@@ -518,6 +533,7 @@ export function computeInvoiceAnalysisSummary(
     const mapping = mappingByDescription.get(normalizeMappingText(chargeDescription))
     const category1 = normalizeMappingText(mapping?.category_1)
     const category2 = normalizeMappingText(mapping?.category_2)
+    const category3 = normalizeMappingText(mapping?.category_3)
     const category2Label = category2 || 'UNMAPPED'
     const modeLabel = modeFromZone(zone)
     const weightBucket = weightBucketFromLbs(billedWeight)
@@ -531,13 +547,15 @@ export function computeInvoiceAnalysisSummary(
     sumBilledWeight += billedWeight
     sumEnteredWeight += enteredWeight
 
-    const isFuelRow = category2 === 'FUEL SURCHARGE'
+    // Python: df["isFuel"] = df["Category 3"] == "FUEL SURCHARGE"
+    const isFuelRow = category3 === 'FUEL SURCHARGE'
 
     if (isFuelRow) {
       summary.measures.fuelCost += netAmount
     }
 
-    if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
+    // Python: df["isSurcharge"] = df["Category 3"].isin(["FUEL SURCHARGE","ACCESSORIAL SURCHARGE","SURCHARGE"])
+    if (SURCHARGE_CATS.has(category3)) {
       summary.measures.costSurcharges += netAmount
     }
 
@@ -599,9 +617,7 @@ export function computeInvoiceAnalysisSummary(
       daily.totalCost += netAmount
       if (isFuelRow) daily.costFuel += netAmount
       if (chargeClassification === 'ACC' && !isExcludedAccCat) daily.costAccessorials += netAmount
-      if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
-        daily.costSurcharges += netAmount
-      }
+      if (SURCHARGE_CATS.has(category3)) daily.costSurcharges += netAmount
       dailySpend.set(dateKey, daily)
 
       const daKey = `${dateKey}\t${accountDim}`
@@ -614,9 +630,7 @@ export function computeInvoiceAnalysisSummary(
       dAcc.totalCost += netAmount
       if (isFuelRow) dAcc.costFuel += netAmount
       if (chargeClassification === 'ACC' && !isExcludedAccCat) dAcc.costAccessorials += netAmount
-      if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
-        dAcc.costSurcharges += netAmount
-      }
+      if (SURCHARGE_CATS.has(category3)) dAcc.costSurcharges += netAmount
       dailySpendByAccount.set(daKey, dAcc)
 
       const [yearText, monthText] = dateKey.split('-')
@@ -635,15 +649,12 @@ export function computeInvoiceAnalysisSummary(
       monthAgg.totalCost += netAmount
       if (isFuelRow) monthAgg.costFuel += netAmount
       if (chargeClassification === 'ACC' && !isExcludedAccCat) monthAgg.costAccessorials += netAmount
-      if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
-        monthAgg.costSurcharges += netAmount
-      }
+      if (SURCHARGE_CATS.has(category3)) monthAgg.costSurcharges += netAmount
       monthSpend.set(monthLabel, monthAgg)
     }
 
     const invLabel = String(rec['Invoice Number'] ?? '').trim() || '(no invoice)'
-    const invKey = `${accountDim}\t${invLabel}`
-    let invAgg = invoiceSpend.get(invKey)
+    let invAgg = invoiceSpend.get(invLabel)
     if (!invAgg) {
       invAgg = {
         totalCost: 0,
@@ -651,26 +662,27 @@ export function computeInvoiceAnalysisSummary(
         costAccessorials: 0,
         costSurcharges: 0,
         minDate: null,
+        accountNumbers: new Set<string>(),
       }
-      invoiceSpend.set(invKey, invAgg)
+      invoiceSpend.set(invLabel, invAgg)
     }
     invAgg.totalCost += netAmount
     if (isFuelRow) invAgg.costFuel += netAmount
     if (chargeClassification === 'ACC' && !isExcludedAccCat) invAgg.costAccessorials += netAmount
-    if (category1 === 'FUEL SURCHARGE' || category1 === 'ACCESSORIAL SURCHARGE') {
-      invAgg.costSurcharges += netAmount
-    }
+    if (SURCHARGE_CATS.has(category3)) invAgg.costSurcharges += netAmount
     if (dateKey) {
       invAgg.minDate =
         invAgg.minDate === null || dateKey < invAgg.minDate ? dateKey : invAgg.minDate
     }
+    const accForInvoice = String(rec['Account Number'] ?? '').trim()
+    if (accForInvoice) invAgg.accountNumbers.add(accForInvoice)
   }
 
   summary.spendByInvoice = Array.from(invoiceSpend.entries())
-    .map(([key, v]) => {
-      const tab = key.indexOf('\t')
-      const accountNumber = tab >= 0 ? key.slice(0, tab) : '(no account)'
-      const invoiceNumber = tab >= 0 ? key.slice(tab + 1) : key
+    .map(([invoiceNumber, v]) => {
+      const sortedAcc = Array.from(v.accountNumbers).sort((x, y) => x.localeCompare(y))
+      const accountNumber =
+        sortedAcc.length === 0 ? '(no account)' : sortedAcc.length === 1 ? sortedAcc[0]! : sortedAcc.join(', ')
       return {
         accountNumber,
         invoiceNumber,
@@ -685,7 +697,6 @@ export function computeInvoiceAnalysisSummary(
       const da = a.invoiceDate ?? ''
       const db = b.invoiceDate ?? ''
       if (da !== db) return db.localeCompare(da)
-      if (a.accountNumber !== b.accountNumber) return a.accountNumber.localeCompare(b.accountNumber)
       return a.invoiceNumber.localeCompare(b.invoiceNumber)
     })
 

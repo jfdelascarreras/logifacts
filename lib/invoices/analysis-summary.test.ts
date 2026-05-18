@@ -71,7 +71,7 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     transportation_mode: 'Other',
     category_1: 'Fuel Surcharge',
     category_2: 'Fuel Surcharge',
-    category_3: '',
+    category_3: 'Fuel Surcharge',
     category_4: '',
     category_5: '',
   }
@@ -174,6 +174,42 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     expect(summary.spendByInvoice[0]?.costAccessorials).toBeCloseTo(5, 6)
     expect(summary.spendByInvoice[0]?.costSurcharges).toBeCloseTo(10.5, 6)
   })
+
+  it('aggregates spendByInvoice by invoice number only when account numbers differ', () => {
+    const lookup = buildChargeDescriptionLookup([baseMappingFreight])
+    const base = {
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-03-10',
+      'Invoice Number': 'INV-DUP',
+      'Tracking Number': 'TRKX',
+      'Package Quantity': '1',
+      'Billed Weight': '1',
+      'Entered Weight': '1',
+      'Zone': '51',
+      'Duty Amount': '0',
+      'Invoice Amount': '0',
+      'Original Service Description': 'Ground',
+      'Charge Category Code': 'IMP',
+      'Charge Classification Code': 'SHP',
+      'Charge Description': 'Ground',
+    } satisfies Partial<Record<(typeof INVOICE_HEADERS)[number], string | null>>
+    const rowBadAccount = invoiceRow({
+      ...base,
+      'Account Number': 'CORRUPT_E74',
+      'Net Amount': '40',
+    })
+    const rowGoodAccount = invoiceRow({
+      ...base,
+      'Account Number': 'ACC_GOOD',
+      'Net Amount': '60',
+    })
+    const summary = computeInvoiceAnalysisSummary([rowBadAccount, rowGoodAccount], lookup)
+    expect(summary.spendByInvoice).toHaveLength(1)
+    expect(summary.spendByInvoice[0]?.invoiceNumber).toBe('INV-DUP')
+    expect(summary.spendByInvoice[0]?.invoiceDate).toBe('2025-03-10')
+    expect(summary.spendByInvoice[0]?.totalCost).toBeCloseTo(100, 6)
+    expect(summary.spendByInvoice[0]?.accountNumber).toBe('ACC_GOOD, CORRUPT_E74')
+  })
 })
 
 describe('yearMonthKeyFromEngineMonthLabel + mergeInvoiceAnalysisFilterMeta', () => {
@@ -194,6 +230,13 @@ describe('yearMonthKeyFromEngineMonthLabel + mergeInvoiceAnalysisFilterMeta', ()
     expect(merged.yearMonths).toContain('2026-01')
     expect(merged.yearMonths).toContain('2025-04')
     expect(merged.accountNumbers).toEqual(['ACC1', 'ACC77', 'ACC99'])
+  })
+
+  it('splits comma-separated spendByInvoice.accountNumber into distinct filter accounts', () => {
+    const merged = mergeInvoiceAnalysisFilterMeta(undefined, {
+      spendByInvoice: [{ accountNumber: 'ZZZ, AAA' }],
+    })
+    expect(merged.accountNumbers).toEqual(['AAA', 'ZZZ'])
   })
 
   it('unions server filterMeta with summary-derived values', () => {

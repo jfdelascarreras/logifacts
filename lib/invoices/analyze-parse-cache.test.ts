@@ -24,8 +24,19 @@ describe('analyze-parse-cache', () => {
 
   it('round-trips cache for same profile', () => {
     const key = analyzeParseCacheKey('user-1', 'a:1\nb:2')
-    setAnalyzeParseCache(key, 'Acme', [])
-    expect(getAnalyzeParseCache(key, 'Acme')).toEqual([])
+    setAnalyzeParseCache(key, 'Acme', [], {
+      duplicateUploadRowsSkipped: 0,
+      duplicateChargeRowsDropped: 0,
+      rowsDroppedCriticalSciCorruption: 0,
+    })
+    expect(getAnalyzeParseCache(key, 'Acme')).toEqual({
+      fullRecords: [],
+      ingestDiagnostics: {
+        duplicateUploadRowsSkipped: 0,
+        duplicateChargeRowsDropped: 0,
+        rowsDroppedCriticalSciCorruption: 0,
+      },
+    })
     expect(getAnalyzeParseCache(key, 'Other')).toBeNull()
   })
 })
