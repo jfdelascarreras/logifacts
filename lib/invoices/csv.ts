@@ -1,16 +1,15 @@
 import { INVOICE_HEADERS } from './headers'
+import { finalizeParsedInvoiceRecords } from './identifier-safety'
 
 export { INVOICE_HEADERS }
 
 export type InvoiceRecord = Record<(typeof INVOICE_HEADERS)[number], string | null>
 
-/** Aligns with Power Query steps 7 + 9 (Club Colors): drop embedded headers and UPS system rows. */
+/** Aligns with Power Query steps 7 + 9 (Club Colors): drop embedded headers only. */
 export function filterRowsLikeClubColorsPowerQuery(records: InvoiceRecord[]): InvoiceRecord[] {
   return records.filter((rec) => {
     const invoiceDate = (rec['Invoice Date'] ?? '').trim()
     if (invoiceDate === 'Invoice Date' || invoiceDate === '') return false
-    const recipient = String(rec['Recipient Number'] ?? '').toUpperCase()
-    if (recipient.includes('UPS')) return false
     return true
   })
 }
@@ -65,14 +64,9 @@ export function mapLineToInvoiceRecord(line: string): InvoiceRecord {
   return record as InvoiceRecord
 }
 
-export function parseInvoiceCsvText(csvText: string): InvoiceRecord[] {
-  // Strip UTF-8 BOM so the first field parses correctly (Excel / some exports).
-  const text = csvText.replace(/^\uFEFF/, '')
-  const lines = text.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0)
+export function rawLinesToInvoiceRecords(lines: readonly string[]): InvoiceRecord[] {
   if (lines.length === 0) return []
 
-  // Some invoice exports may unexpectedly include a header row.
-  // Skip it when it clearly matches known header names.
   const firstCols = splitCsvLine(lines[0]).map((v) => v.trim().toLowerCase())
   const hasHeaderLikeRow =
     firstCols.includes('version') &&
@@ -80,11 +74,25 @@ export function parseInvoiceCsvText(csvText: string): InvoiceRecord[] {
     firstCols.includes('charge description')
 
   let dataLines = hasHeaderLikeRow ? lines.slice(1) : lines
-  // If stripping a mistaken "header" left nothing, fall back to all lines.
   if (dataLines.length === 0 && lines.length > 0) {
     dataLines = lines
   }
   return dataLines.map(mapLineToInvoiceRecord)
+}
+
+/** Same output as parsing + SCI identifier cleanup + dropping unrecoverable critical-ID rows */
+export function parseInvoiceCsvDocument(csvText: string): {
+  records: InvoiceRecord[]
+  rowsDroppedCriticalSciCorruption: number
+} {
+  const text = csvText.replace(/^\uFEFF/, '')
+  const lines = text.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0)
+  const mapped = rawLinesToInvoiceRecords(lines)
+  return finalizeParsedInvoiceRecords(mapped)
+}
+
+export function parseInvoiceCsvText(csvText: string): InvoiceRecord[] {
+  return parseInvoiceCsvDocument(csvText).records
 }
 
 // Small helpers for numeric conversions used in analysis

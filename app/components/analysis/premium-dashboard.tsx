@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
-import { Loader2 } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -92,6 +92,11 @@ type Summary = {
   }>
   filterMeta?: InvoiceAnalysisFilterMeta
   appliedFilters?: InvoiceAnalysisFilters
+  ingestDiagnostics?: {
+    duplicateUploadRowsSkipped: number
+    duplicateChargeRowsDropped: number
+    rowsDroppedCriticalSciCorruption: number
+  }
 }
 
 type AnalysisHistoryItem = {
@@ -156,6 +161,7 @@ export function PremiumDashboard() {
   const [analysisPostIntent, setAnalysisPostIntent] = useState<'idle' | 'filters' | 'full-refresh'>('idle')
   /** Fast load from DB (GET) */
   const [loadingCached, setLoadingCached] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
@@ -210,6 +216,25 @@ export function PremiumDashboard() {
     })
     setFilterMeta(mergedFilterMeta)
     const applied = (raw.appliedFilters ?? r.applied_filters) as InvoiceAnalysisFilters | undefined
+    const ingestRaw = raw.ingestDiagnostics ?? r.ingest_diagnostics
+    let ingestDiagnostics: Summary['ingestDiagnostics'] = undefined
+    if (ingestRaw && typeof ingestRaw === 'object') {
+      const ig = ingestRaw as Record<string, unknown>
+      const dupUp = ig.duplicateUploadRowsSkipped ?? ig.duplicate_upload_rows_skipped
+      const dupCh = ig.duplicateChargeRowsDropped ?? ig.duplicate_charge_rows_dropped
+      const sci = ig.rowsDroppedCriticalSciCorruption ?? ig.rows_dropped_critical_sci_corruption
+      if (
+        typeof dupUp === 'number' &&
+        typeof dupCh === 'number' &&
+        typeof sci === 'number'
+      ) {
+        ingestDiagnostics = {
+          duplicateUploadRowsSkipped: dupUp,
+          duplicateChargeRowsDropped: dupCh,
+          rowsDroppedCriticalSciCorruption: sci,
+        }
+      }
+    }
     const hydrateFilters =
       options?.hydrateFiltersFromApplied === true &&
       Boolean(applied && typeof applied === 'object' && hasActiveInvoiceFilters(applied))
@@ -255,6 +280,7 @@ export function PremiumDashboard() {
       dailySpendByAccount,
       filterMeta: mergedFilterMeta,
       appliedFilters: applied,
+      ingestDiagnostics,
     })
   }, [])
 
@@ -330,6 +356,38 @@ export function PremiumDashboard() {
     setFilterMonths([])
     setFilterAccount('')
     await postAnalysis(undefined, 'filters')
+  }
+
+  async function exportPremiumExcel() {
+    setExporting(true)
+    setError(null)
+    try {
+      const filters = buildFiltersBody(filterYear, filterMonths, filterAccount)
+      const body = Object.keys(filters).length > 0 ? { filters } : {}
+      const res = await fetch('/api/invoices/analyze/export', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(json.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `premium-analysis_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const invoiceMonthChoices = useMemo(() => {
@@ -414,14 +472,34 @@ export function PremiumDashboard() {
               </p>
             ) : null}
           </div>
-          <Button
-            variant="outline"
-            className="border-accent/40 bg-background text-accent hover:bg-accent/10"
-            onClick={refreshAnalysis}
-            disabled={loadingCached || refreshing}
-          >
-            {refreshing && analysisPostIntent === 'full-refresh' ? 'Recomputing…' : 'Refresh analysis'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="border-accent/40 bg-background text-accent hover:bg-accent/10"
+              onClick={exportPremiumExcel}
+              disabled={loadingCached || exporting || refreshing}
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                  Exporting…
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" aria-hidden />
+                  Export Excel
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-accent/40 bg-background text-accent hover:bg-accent/10"
+              onClick={refreshAnalysis}
+              disabled={loadingCached || refreshing || exporting}
+            >
+              {refreshing && analysisPostIntent === 'full-refresh' ? 'Recomputing…' : 'Refresh analysis'}
+            </Button>
+          </div>
         </header>
 
         {error ? (
@@ -431,6 +509,51 @@ export function PremiumDashboard() {
           >
             {error}
           </div>
+        ) : null}
+
+        {summary?.ingestDiagnostics &&
+        (summary.ingestDiagnostics.duplicateUploadRowsSkipped > 0 ||
+          summary.ingestDiagnostics.duplicateChargeRowsDropped > 0 ||
+          summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0) ? (
+          <Card className="border-amber-500/40 bg-amber-500/10">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-foreground">Import adjustments</CardTitle>
+              <CardDescription className="text-foreground/80">
+                Some rows were skipped or merged so totals are not inflated by duplicate uploads or corrupted
+                identifiers. If you rely on counts matching your source exactly, compare these numbers against your
+                files.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-foreground">
+              <ul className="list-disc space-y-1 pl-5">
+                {summary.ingestDiagnostics.duplicateUploadRowsSkipped > 0 ? (
+                  <li>
+                    Duplicate upload files skipped:{' '}
+                    <span className="font-medium tabular-nums">
+                      {summary.ingestDiagnostics.duplicateUploadRowsSkipped}
+                    </span>{' '}
+                    (same file content hash as an already-processed upload)
+                  </li>
+                ) : null}
+                {summary.ingestDiagnostics.duplicateChargeRowsDropped > 0 ? (
+                  <li>
+                    Duplicate charge lines merged:{' '}
+                    <span className="font-medium tabular-nums">
+                      {summary.ingestDiagnostics.duplicateChargeRowsDropped}
+                    </span>
+                  </li>
+                ) : null}
+                {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0 ? (
+                  <li>
+                    Rows dropped after identifier sanity check (e.g. scientific-notation-shaped IDs):{' '}
+                    <span className="font-medium tabular-nums">
+                      {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption}
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </CardContent>
+          </Card>
         ) : null}
 
         {summary && measures ? (

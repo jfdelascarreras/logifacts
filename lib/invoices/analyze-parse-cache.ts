@@ -5,10 +5,23 @@
  */
 import type { InvoiceRecord } from './csv'
 
+export type PremiumParseIngestDiagnostics = {
+  duplicateUploadRowsSkipped: number
+  duplicateChargeRowsDropped: number
+  rowsDroppedCriticalSciCorruption: number
+}
+
 type CacheEntry = {
   fullRecords: InvoiceRecord[]
   profileCompanyName: string
   expiresAt: number
+  ingestDiagnostics: PremiumParseIngestDiagnostics
+}
+
+const ZERO_INGEST: PremiumParseIngestDiagnostics = {
+  duplicateUploadRowsSkipped: 0,
+  duplicateChargeRowsDropped: 0,
+  rowsDroppedCriticalSciCorruption: 0,
 }
 
 const cache = new Map<string, CacheEntry>()
@@ -28,7 +41,10 @@ export function analyzeParseCacheKey(userId: string, fingerprint: string): strin
   return `${userId}::${fingerprint}`
 }
 
-export function getAnalyzeParseCache(key: string, profileCompanyName: string): InvoiceRecord[] | null {
+export function getAnalyzeParseCache(
+  key: string,
+  profileCompanyName: string
+): { fullRecords: InvoiceRecord[]; ingestDiagnostics: PremiumParseIngestDiagnostics } | null {
   pruneAnalyzeParseCache()
   const e = cache.get(key)
   if (!e || Date.now() > e.expiresAt) {
@@ -39,13 +55,14 @@ export function getAnalyzeParseCache(key: string, profileCompanyName: string): I
     cache.delete(key)
     return null
   }
-  return e.fullRecords
+  return { fullRecords: e.fullRecords, ingestDiagnostics: e.ingestDiagnostics }
 }
 
 export function setAnalyzeParseCache(
   key: string,
   profileCompanyName: string,
-  fullRecords: InvoiceRecord[]
+  fullRecords: InvoiceRecord[],
+  ingestDiagnostics?: PremiumParseIngestDiagnostics
 ): void {
   while (cache.size >= MAX_KEYS) {
     const oldest = cache.keys().next().value
@@ -56,6 +73,7 @@ export function setAnalyzeParseCache(
     fullRecords,
     profileCompanyName,
     expiresAt: Date.now() + TTL_MS,
+    ingestDiagnostics: ingestDiagnostics ? { ...ingestDiagnostics } : { ...ZERO_INGEST },
   })
 }
 

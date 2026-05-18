@@ -8,15 +8,16 @@ const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.htm
 
 export function LandingHero() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-32 left-1/2 h-[540px] w-[540px] -translate-x-1/2 rounded-full bg-secondary/30 blur-3xl" />
-          <div className="absolute -bottom-40 -left-20 h-[420px] w-[420px] rounded-full bg-accent/20 blur-3xl" />
-        </div>
+    <div className="relative isolate min-h-screen min-h-[100dvh] overflow-x-hidden bg-background text-foreground">
+      {/* Blobs attach to this full-viewport shell so blur isn’t clipped to content height */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-32 left-1/2 h-[540px] w-[540px] -translate-x-1/2 rounded-full bg-secondary/30 blur-3xl" />
+        <div className="absolute -bottom-40 -left-20 h-[420px] w-[420px] rounded-full bg-accent/20 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-[380px] w-[380px] translate-y-1/4 translate-x-1/4 rounded-full bg-secondary/15 blur-3xl" />
+      </div>
 
-        <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:gap-10 sm:px-6 sm:py-24">
-          <header className="flex items-center justify-between gap-3">
+      <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:gap-10 sm:px-6 sm:py-24">
+        <header className="flex items-center justify-between gap-3">
             <Link href="/" className="shrink-0" aria-label="LogiFacts home">
               <BrandLogo priority />
             </Link>
@@ -38,9 +39,9 @@ export function LandingHero() {
                 </Link>
               </nav>
             </div>
-          </header>
+        </header>
 
-          <section className="flex flex-col items-start gap-8">
+        <section className="flex flex-col items-start gap-8">
             <div className="max-w-2xl">
               <h1 className="font-heading text-balance text-4xl font-bold tracking-tight sm:text-5xl">
                 Welcome to Logifacts
@@ -79,12 +80,11 @@ export function LandingHero() {
                 </div>
               ))}
             </div>
-          </section>
+        </section>
 
-          <footer className="text-sm text-muted-foreground">
-            Built for teams who want cleaner shipment intelligence.
-          </footer>
-        </div>
+        <footer className="text-sm text-muted-foreground">
+          Built for teams who want cleaner shipment intelligence.
+        </footer>
       </div>
     </div>
   )

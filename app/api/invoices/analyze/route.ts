@@ -1,29 +1,19 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
+import { hasActiveInvoiceFilters } from '@/lib/invoices/analysis-summary'
+import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
 import {
-  buildChargeDescriptionLookup,
-  buildInvoiceAnalysisFilterMeta,
-  computeInvoiceAnalysisSummary,
-  filterInvoiceRecords,
-  hasActiveInvoiceFilters,
-  normalizeInvoiceAnalysisFilters,
-} from '@/lib/invoices/analysis-summary'
-import {
-  applyProfileSenderCompanyName,
-  filterRowsLikeClubColorsPowerQuery,
-  parseInvoiceCsvText,
-} from '@/lib/invoices/csv'
-import {
-  analyzeParseCacheFingerprint,
-  analyzeParseCacheKey,
-  getAnalyzeParseCache,
-  setAnalyzeParseCache,
-} from '@/lib/invoices/analyze-parse-cache'
-import { contentSha256FromStoredCsv } from '@/lib/invoices/dedupe-hash-server'
+  getAnalysisCache,
+  invalidateAnalysisCache,
+  setAnalysisCache,
+} from '@/lib/cache/analysis-cache'
 
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
 export const maxDuration = 120
+
+/** Keeps each PostgREST upsert under Postgres `statement_timeout` when dailySpendByAccount has many rows. */
+const SPEND_UPSERT_CHUNK_SIZE = 400
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -35,8 +25,6 @@ export async function POST(request: Request) {
   } catch {
     filtersRaw = undefined
   }
-  const appliedFilters = normalizeInvoiceAnalysisFilters(filtersRaw)
-  const filtersActive = hasActiveInvoiceFilters(appliedFilters)
 
   const {
     data: { user },
@@ -47,73 +35,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  const [{ data: uploads, error: uploadError }, { data: mappings, error: mappingsError }] = await Promise.all([
-    supabase
-      .from('invoice_uploads')
-      .select('id, csv_text, created_at, content_sha256')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(200),
-    supabase
-      .from('charge_description_mappings')
-      .select(
-        'charge_description, transportation_mode, category_1, category_2, category_3, category_4, category_5'
-      ),
-  ])
-
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 400 })
+  const computed = await computePremiumInvoiceAnalysis(supabase, user, filtersRaw)
+  if (!computed.ok) {
+    return NextResponse.json({ error: computed.message }, { status: computed.status })
   }
 
-  if (!uploads || uploads.length === 0) {
-    return NextResponse.json({ error: 'No invoice uploads found' }, { status: 404 })
-  }
-
-  const uploadsMissingHash = uploads.filter(
-    (u) => !u.content_sha256 || String(u.content_sha256).length === 0
-  )
-  for (const u of uploadsMissingHash) {
-    const csvText = String(u.csv_text ?? '')
-    const content_sha256 = contentSha256FromStoredCsv(csvText)
-    const { error: hashErr } = await supabase
-      .from('invoice_uploads')
-      .update({ content_sha256 })
-      .eq('id', u.id)
-    if (hashErr) {
-      return NextResponse.json({ error: hashErr.message }, { status: 400 })
-    }
-    u.content_sha256 = content_sha256
-  }
-
-  const profileCompanyName = String(user.user_metadata?.company_name ?? '').trim()
-
-  const parseCacheKey = analyzeParseCacheKey(user.id, analyzeParseCacheFingerprint(uploads))
-  let fullRecords = getAnalyzeParseCache(parseCacheKey, profileCompanyName)
-  if (!fullRecords) {
-    fullRecords = applyProfileSenderCompanyName(
-      filterRowsLikeClubColorsPowerQuery(
-        uploads.flatMap((upload) => parseInvoiceCsvText(String(upload.csv_text ?? '')))
-      ),
-      profileCompanyName
-    )
-    setAnalyzeParseCache(parseCacheKey, profileCompanyName, fullRecords)
-  }
-
-  const filterMeta = buildInvoiceAnalysisFilterMeta(fullRecords)
-  const records = filterInvoiceRecords(fullRecords, appliedFilters)
-
-  if (mappingsError) {
-    return NextResponse.json({ error: mappingsError.message }, { status: 400 })
-  }
-
-  const mappingByDescription = buildChargeDescriptionLookup(mappings ?? [])
-
-  const summaryCore = computeInvoiceAnalysisSummary(records, mappingByDescription)
-  const summary = {
-    ...summaryCore,
-    filterMeta,
-    appliedFilters,
-  }
+  const { summaryCore, summaryForDashboard: summary, uploadsCount } = computed.data
+  const appliedFilters = summary.appliedFilters
+  const filtersActive = hasActiveInvoiceFilters(appliedFilters)
 
   const spendRows: Array<{
     user_id: string
@@ -141,18 +70,42 @@ export async function POST(request: Request) {
     if (clearSpendError) {
       spendSyncWarning = `daily-spend clear: ${clearSpendError.message}`
     } else if (spendRows.length) {
-      const { error: spendUpsertError } = await supabase
-        .from('invoice_spend_by_date')
-        .upsert(spendRows, { onConflict: 'user_id,invoice_date,account_number' })
+      let spendUpsertError: { message: string } | null = null
+      for (let i = 0; i < spendRows.length; i += SPEND_UPSERT_CHUNK_SIZE) {
+        const chunk = spendRows.slice(i, i + SPEND_UPSERT_CHUNK_SIZE)
+        const { error: chunkErr } = await supabase
+          .from('invoice_spend_by_date')
+          .upsert(chunk, { onConflict: 'user_id,invoice_date,account_number' })
+        if (chunkErr) {
+          spendUpsertError = chunkErr
+          break
+        }
+      }
       if (spendUpsertError) {
         spendSyncWarning = `daily-spend upsert: ${spendUpsertError.message}`
       }
     }
   }
 
+  const {
+    data: latestUpload,
+    error: latestUploadErr,
+  } = await supabase
+    .from('invoice_uploads')
+    .select('id')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (latestUploadErr || !latestUpload?.id) {
+    return NextResponse.json({ error: latestUploadErr?.message ?? 'No invoice uploads found' }, { status: 404 })
+  }
+
+  const latestUploadId = latestUpload.id
+
   // Upsert into analysis table against the most recent upload ID.
   // We still keep this as a cache row while summary itself is aggregated across all uploads.
-  const latestUploadId = uploads[0].id
   const { error: upsertError } = await supabase
     .from('invoice_upload_analyses')
     .upsert(
@@ -168,10 +121,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: upsertError.message }, { status: 400 })
   }
 
+  // Invalidate Redis so the next GET fetches fresh data from Supabase.
+  await invalidateAnalysisCache(user.id)
+
   return NextResponse.json(
     {
       uploadId: latestUploadId,
-      uploadsAnalyzed: uploads.length,
+      uploadsAnalyzed: uploadsCount,
       summary,
       ...(spendSyncWarning ? { spendSyncWarning } : {}),
     },
@@ -195,6 +151,14 @@ export async function GET() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
+  // Redis cache check — skip Supabase on hit.
+  const cached = await getAnalysisCache(user.id)
+  if (cached) {
+    return NextResponse.json({ analyses: cached }, {
+      headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+    })
+  }
+
   const { data, error } = await supabase
     .from('invoice_upload_analyses')
     .select('id, invoice_upload_id, created_at, updated_at, summary')
@@ -206,10 +170,13 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  return NextResponse.json({ analyses: data ?? [] }, {
-    headers: {
-      'Cache-Control': 'private, no-store, max-age=0',
-    },
+  const analyses = data ?? []
+
+  // Populate Redis for subsequent GET requests.
+  await setAnalysisCache(user.id, analyses)
+
+  return NextResponse.json({ analyses }, {
+    headers: { 'Cache-Control': 'private, no-store, max-age=0' },
   })
 }
 
