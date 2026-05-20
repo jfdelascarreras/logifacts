@@ -19,7 +19,7 @@ flowchart LR
 
   subgraph supa [Supabase PostgreSQL]
     Up[invoice_uploads]
-    Map[charge_description_mappings]
+    Map[master_mapping]
     Spend[invoice_spend_by_date]
     Ana[invoice_upload_analyses]
   end
@@ -43,9 +43,14 @@ flowchart LR
 |----------|------|
 | `app/components/invoices/` | Upload UI (`invoice-csv-upload.tsx`) — client-side parse for row count, dedupe, Supabase insert. |
 | `app/api/invoices/analyze/` | `route.ts` — auth, load uploads + mappings, call aggregation engine, write spend + analysis cache. |
+| `app/api/invoices/upload/` | Multi-carrier ingest (CSV/Excel) — parses with `lib/invoices/parsers/` and maps lines via **`master_mapping`**. |
 | `lib/invoices/` | **Domain module**: CSV layout (`headers.ts`), parsing/filtering (`csv.ts`), content hash for dedupe (`dedupe-hash.ts`), **aggregation engine** (`analysis-summary.ts`), server hash helper (`dedupe-hash-server.ts`). Public entry: `lib/invoices/index.ts`. |
+| `lib/invoices/parsers/` | Carrier parsers: **`ups.ts`** (CSV), **`fedex.ts`** / **`wwe.ts`** (Excel via ExcelJS) → `ParsedInvoiceLine[]`. |
+| `lib/invoices/mapping.ts` | Joins parsed lines to **`master_mapping`** per carrier (normalized charge description). |
+| `lib/invoices/excel-master-mapping.ts` | Reads consolidated mapping **`.xlsx`** (Charge Description … Standardized Charge); used by seed, not by Premium HTTP path. |
 | `lib/invoices/analysis-summary.test.ts` | **Accuracy proofs** (Vitest) — same engine as production API. |
-| `Invoices skills/` | **Offline** Excel mappings + optional Python tooling — **not** in the live web request path unless you wire them separately. |
+| `supabase/seed.ts` | Upserts **`master_mapping`** from the workbook (see below). |
+| `Invoices skills/` | **Offline** consolidated mapping workbook (`Master_Mapping_Consolidated_Updated*.xlsx`) + optional Python tooling — seeding source, not read on every analyze request. |
 
 ---
 
@@ -72,8 +77,8 @@ Row-level **Sender Company Name** in storage is still whatever the carrier expor
    - `parseInvoiceCsvText` on each upload’s `csv_text`.
    - `filterRowsLikeClubColorsPowerQuery` — aligns with the Power Query–style filter (drop invalid/system rows).
    - `applyProfileSenderCompanyName` — if `user.user_metadata.company_name` is set, every row’s `Sender Company Name` is replaced for reporting consistency.
-5. **Load mappings** from `charge_description_mappings` and build a lookup (`buildChargeDescriptionLookup`).
-6. **Aggregate** with `computeInvoiceAnalysisSummary` in `analysis-summary.ts` — **single source of truth** for totals, fuel/accessorial splits, carrier/service, daily/monthly spend, category/mode/weight buckets, package dedupe by shipment key, weight gap, etc.
+5. **Load mappings** from **`master_mapping`** (including **`carrier`** and **`standardized_charge`**) and build **`buildChargeDescriptionLookup`**: composite keys are **`UPS` / `FEDEX` / `WWE` + tab + normalized charge description**, plus legacy **description-only** keys for **UPS** rows for backward compatibility.
+6. **Aggregate** with `computeInvoiceAnalysisSummary` in `analysis-summary.ts` — **single source of truth** for totals, fuel/accessorial splits, carrier/service, daily/monthly spend, category/mode/weight buckets, package dedupe by shipment key, weight gap, etc. Row-level taxonomy resolution uses **`Carrier Name`** from the CSV plus **`Charge Description`** (see [`PREMIUM_ANALYSIS_CALCULATION.md`](./PREMIUM_ANALYSIS_CALCULATION.md)).
 7. **Persist results**
    - Replace user rows in `invoice_spend_by_date` from the computed daily series.
    - Upsert `invoice_upload_analyses` (summary JSON, keyed by latest `invoice_upload_id` while values aggregate across uploads in that run).
@@ -95,7 +100,7 @@ Premium Analysis UI loads cached analysis and/or recomputes display from stored 
 | **Golden-style cases** | Synthetic rows with hand-checked expectations for `totalCost`, `fuelCost`, `costAccessorials`, package dedupe, etc. |
 | **Pipeline smoke** | Full 250-column CSV line → parse → filter → profile sender. |
 
-**How to extend proofs for a “real product”:** add a **redacted real CSV snippet** under `lib/invoices/fixtures/` (or similar) and assert expected measures using a **frozen subset** of `charge_description_mappings`, or a signed-off JSON expected summary from finance/Power BI.
+**How to extend proofs for a “real product”:** add a **redacted real CSV snippet** under `lib/invoices/fixtures/` (or similar) and assert expected measures using a **frozen subset** of **`master_mapping`** taxonomy rows (**include `carrier`** when asserting multicarrier behavior), or a signed-off JSON expected summary from finance/Power BI.
 
 ---
 
@@ -109,18 +114,67 @@ Premium Analysis UI loads cached analysis and/or recomputes display from stored 
 
 ---
 
+## Taxonomy table (`master_mapping`)
+
+Single canonical reference for multicarrier charge-description taxonomy:
+
+| Table | Used by | Role |
+|-------|---------|------|
+| **`master_mapping`** | Premium Analysis (`computePremiumInvoiceAnalysis`), multipart upload mapping (`mapInvoiceLines`), manual fixes (`POST /api/invoices/mapping`) | Columns: **`charge_description`**, **`carrier`**, **`standardized_charge`**, **`transportation_mode`**, **`category_1`…`category_5`**. Grain: **`UNIQUE (carrier, charge_description)`**. |
+
+Seeded from the consolidated Excel workbook via **`pnpm dlx tsx supabase/seed.ts`**: optional **`MASTER_MAPPING_XLSX`**, otherwise **`Invoices skills/Master_Mapping_Consolidated_Updated_3.xlsx`** if present, else **`…Updated.xlsx`**. Older migrations may have altered legacy table names before consolidation; applied history lives under **`supabase/migrations/`**.
+
+### Seeding taxonomy (`master_mapping`)
+
+Canonical one-liner (from repo root, after migrations are applied):
+
+```bash
+pnpm dlx tsx supabase/seed.ts
+```
+
+**Environment** (required by `supabase/seed.ts`):
+
+| Variable | Notes |
+|----------|--------|
+| **`SUPABASE_URL`** or **`NEXT_PUBLIC_SUPABASE_URL`** | Project API URL (e.g. `https://<project-ref>.supabase.co`). |
+| **`SUPABASE_SERVICE_KEY`** | **Prefer for DB upserts** (service role). The script accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as a fallback, but anon/publishable keys may hit RLS limits—use service role when refreshing mappings in staging/production. |
+
+**Optional:**
+
+| Variable | Notes |
+|----------|--------|
+| **`MASTER_MAPPING_XLSX`** | Absolute or relative path to the consolidated workbook if you do not want the default resolver under `Invoices skills/`. |
+
+**Example** (explicit workbook + prod URL — do not paste real keys into git):
+
+```bash
+export SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
+export SUPABASE_SERVICE_KEY="your-service-role-key"
+export MASTER_MAPPING_XLSX="Invoices skills/Master_Mapping_Consolidated_Updated.xlsx"
+
+pnpm dlx tsx supabase/seed.ts
+```
+
+The script logs which workbook path it reads, then chunked upserts into **`master_mapping`**. Row count after seed depends on workbook rows that survive dedupe by **`(carrier, charge_description)`** (expect on the order of **~245** rows for the current consolidated file, not necessarily every raw Excel row).
+
+---
+
 ## Operational notes
 
+- **`master_mapping` stays in lockstep with the Master Mapping workbook** — the table is the **only canonical** taxonomy source at runtime (`carrier` + `charge_description` → categories, modes, standardized charge labels). **`pnpm dlx tsx supabase/seed.ts`** is not a one-time setup step: **re-run it against production whenever the consolidated Excel gains new carriers, charge descriptions/types, or category changes**, after pointing env at the correct project (`SUPABASE_URL`, **`SUPABASE_SERVICE_KEY`**) and, if needed, **`MASTER_MAPPING_XLSX`** (see **Seeding taxonomy** below). Missing a seed after a workbook rollout desynchronizes classifications from what finance expects.
 - **Re-run analysis** whenever new files are uploaded; the API aggregates over the current batch of uploads (subject to the route’s limit).
-- **Mapping changes** in `charge_description_mappings` change outcomes for the next analyze; for auditability, consider versioning mappings or storing a `mapping_revision` on analysis records (future enhancement).
+- **Mapping changes** in **`master_mapping`** affect Premium Analysis on the next analyze and structured **`invoice_lines`** after re-upload or remap (`POST /api/invoices/mapping`). For auditability, consider versioning mappings or storing a `mapping_revision` on analysis records (future enhancement).
 
 ---
 
 ## Related commands
 
 ```bash
-pnpm test          # accuracy proofs (Vitest)
-pnpm build         # production compile check
+pnpm test   # accuracy proofs (Vitest)
+pnpm build  # production compile check
+
+# Required after every Master Mapping Excel update (Operational notes above)
+pnpm dlx tsx supabase/seed.ts
 ```
 
 For Next.js and framework conventions, follow `AGENTS.md` and the local Next.js docs referenced there.

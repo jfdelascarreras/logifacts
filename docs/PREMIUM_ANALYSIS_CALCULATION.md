@@ -9,7 +9,7 @@ Use it to compare behavior with another tool or chat (Power BI, Python notebooks
 ## Scope
 
 - **In scope:** `POST /api/invoices/analyze` → compute path that reads **`invoice_uploads.csv_text`**, parses CSV rows, optionally applies dashboard filters, then runs **`computeInvoiceAnalysisSummary`**.
-- **Out of scope:** `POST /api/invoices/upload` (FedEx/WWE Excel buffers, UPS CSV parser under `lib/invoices/parsers/`). That path builds structured invoice lines for storage; Premium Analysis aggregates **stored CSV text** instead.
+- **Partially shared:** ingest via **`POST /api/invoices/upload`** (FedEx/WWE Excel + UPS CSV under `lib/invoices/parsers/`) persists invoice lines mapped with **`master_mapping`**. Premium Analysis aggregates **UPS-style `csv_text` in `invoice_uploads`** joined to the same **`master_mapping`** taxonomy rows (see seed in [`ARCHITECTURE.md`](./ARCHITECTURE.md)).
 
 Related architecture overview: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
@@ -40,7 +40,7 @@ High-level flow inside **`computePremiumInvoiceAnalysis`**:
 8. **Profile override:** `applyProfileSenderCompanyName` may set **`Sender Company Name`** from the user profile (does not change money math).
 9. **Filter meta** is built from **full unfiltered** `fullRecords`: `buildInvoiceAnalysisFilterMeta`.
 10. **Dashboard filters** (year, months, legacy `yearMonth`, account): `filterInvoiceRecords(fullRecords, appliedFilters)` → **`records`** used for aggregation only.
-11. **Mappings:** rows from **`charge_description_mappings`** → map keyed by normalized **`charge_description`** via `buildChargeDescriptionLookup`.
+11. **Mappings:** load all rows from **`master_mapping`** (`carrier`, `standardized_charge`, `charge_description`, `transportation_mode`, `category_1`…`category_5`). Build **`mappingByDescription`** via **`buildChargeDescriptionLookup`** (carrier-aware composite keys plus UPS legacy keys — see below).
 12. **Summary:** `computeInvoiceAnalysisSummary(records, mappingByDescription)` → **`InvoiceAnalysisSummary`**.
 13. **Dashboard payload** adds **`filterMeta`**, **`appliedFilters`**, and **`ingestDiagnostics`**.
 
@@ -54,11 +54,30 @@ Each input row is one **charge line** (many lines per shipment / invoice).
 
 Amounts and quantities use **`toNumber`** from `lib/invoices/csv.ts` on fields such as **`Net Amount`**, **`Invoice Amount`**, **`Duty Amount`**, **`Billed Weight`**, **`Entered Weight`**, **`Package Quantity`**, **`Zone`**.
 
-### Charge description → categories
+### Carrier + charge description → categories
 
 1. **`Charge Description`** on the row is trimmed.
-2. Lookup key = **`normalizeMappingText(charge_description)`** from DB mappings (trim, collapse whitespace, **uppercase**).
-3. From the matched mapping row (if any): **`category_1`**, **`category_2`**, **`category_3`** are each passed through **`normalizeMappingText`** again for comparison.
+2. **Carrier-side key** starts from **`normalizeMappingText`** on **`Carrier Name`** (fallback **`UPS`** if blank): FedEx variants fold to **`FEDEX`**; WWE / “World…” strings fold to **`WWE`**.
+3. **Description-side key** = **`normalizeMappingText(charge_description)`** — trim, collapse whitespace, uppercase (same normalization as taxonomy rows loaded from Supabase).
+
+**Resolution order** (first hit wins):
+
+1. **Composite:** canonical carrier (`UPS`, `FEDEX`, or `WWE`) **+ TAB +** description key — e.g. FedEx CSV row uses the FedEx mapping row for that charge text.
+2. If the invoice carrier is **not UPS** and step 1 missed: **UPS + TAB +** description key (shared UPS charge wording on non-UPS files).
+3. **Description key only** — legacy rows keyed without carrier (backward compatible).
+
+### What `buildChargeDescriptionLookup` stores
+
+For each mapping row from the DB:
+
+- **Composite:** canonical carrier (**`UPS`**, **`FEDEX`**, or **`WWE`**) followed by a **tab** and **`descKey`**, pointing at `{ transportation_mode, category_1 … category_5 }`.
+- If the row is **`UPS`**, **also** sets **`descKey` →** same payload so old data without composite keys still works.
+
+**`standardized_charge`** is selected from Supabase for future use but is **not** part of fuel/accessorial/category math today; KPIs still use **`category_1…5`** derived from **`master_mapping`**.
+
+### From the matched mapping row (if any)
+
+If a row matches: **`category_1`**, **`category_2`**, **`category_3`** are each passed through **`normalizeMappingText`** again for comparison (`FUEL SURCHARGE`, bucket labels, etc.).
 
 If there is **no** mapping, those strings are empty; **`category2` label** for rollups becomes **`UNMAPPED`**.
 
@@ -66,7 +85,7 @@ If there is **no** mapping, those strings are empty; **`category2` label** for r
 
 | Output / use | Rule |
 |--------------|------|
-| **Carrier** | `rec['Carrier Name']` or `'Unknown'` |
+| **`Carrier`** | `rec['Carrier Name']` or `'Unknown'` (display bucket; mapping resolver defaults blank carrier name to **`UPS`**) |
 | **Service** | `Original Service Description` trim, else `Charge Category Code` trim, else `'Unknown'` |
 | **Mode** | `modeFromZone(zone)` from numeric **Zone** (Ground, Air, Express/Special, international bands, etc.) — see `lib/invoices/analysis-summary.ts`. |
 | **Weight bucket** | `weightBucketFromLbs(billedWeight)` |
@@ -167,8 +186,9 @@ app/api/invoices/analyze/route.ts     → triggers compute, persists summary JSO
 lib/invoices/premium-analysis-compute.ts → orchestration + ingest diagnostics + cache
 lib/invoices/csv.ts                   → CSV → InvoiceRecord, Club Colors filter, numbers
 lib/invoices/analysis-summary.ts      → computeInvoiceAnalysisSummary + filters + helpers
-lib/invoices/identifier-safety.ts     → upload dedupe + charge dedupe + SCI/id hygiene (invoked from compute/csv path)
-lib/invoices/analyze-parse-cache.ts   → optional parse reuse + cached ingest diagnostics
+lib/invoices/mapping.ts                 → master_mapping join for multipart upload ingest (same taxonomy source as Premium Analysis)
+lib/invoices/excel-master-mapping.ts    → workbook → seed rows (not on analyze hot path)
+supabase/seed.ts                        → upsert master_mapping
 ```
 
 ---

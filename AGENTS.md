@@ -1,9 +1,5 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# Logifacts — agent entry point
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+Deep dive (overview, schema, pipelines, conventions, testing): **[`agent.md`](./agent.md)**
 
-## Invoice analytics (this repo)
-
-Upload → analyze pipeline, Supabase tables, and **accuracy tests**: see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+For Next.js specifics: check `node_modules/next/dist/docs/`
