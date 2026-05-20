@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2, Trash2 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceCsvText } from '@/lib/invoices/csv'
@@ -8,6 +9,14 @@ import { normalizeCsvForDedupe, sha256HexUtf8 } from '@/lib/invoices/dedupe-hash
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -25,6 +34,14 @@ function describePostgrestLikeError(e: unknown): string {
 /** Keeps each request under typical gateway / PostgREST body limits when many CSVs are selected. */
 const INSERT_CHUNK_SIZE = 5
 
+type StoredUpload = {
+  id: string
+  original_file_name: string
+  created_at: string
+  row_count: number | null
+  status: string
+}
+
 export function InvoiceCsvUpload() {
   const supabase = useMemo(() => createClient(), [])
 
@@ -33,19 +50,122 @@ export function InvoiceCsvUpload() {
   const [workPhase, setWorkPhase] = useState<'idle' | 'uploading' | 'analyzing'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [recentUploads, setRecentUploads] = useState<
-    Array<{ id: string; original_file_name: string; created_at: string; row_count: number | null; status: string }>
-  >([])
+  const [storedUploads, setStoredUploads] = useState<StoredUpload[]>([])
+  const [loadingUploads, setLoadingUploads] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<StoredUpload | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  async function refreshRecent() {
-    const { data, error } = await supabase
+  const refreshStoredUploads = useCallback(async () => {
+    const { data, error: listError } = await supabase
       .from('invoice_uploads')
       .select('id, original_file_name, created_at, row_count, status')
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(200)
 
-    if (error) throw error
-    setRecentUploads(data ?? [])
+    if (listError) throw listError
+    setStoredUploads(data ?? [])
+  }, [supabase])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoadingUploads(true)
+      try {
+        await refreshStoredUploads()
+        if (!cancelled) setError(null)
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to load your uploads.')
+        }
+      } finally {
+        if (!cancelled) setLoadingUploads(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [refreshStoredUploads])
+
+  function dispatchPremiumAnalysisUpdate(detail: {
+    summary?: unknown
+    uploadId?: string
+    uploadsAnalyzed?: number
+    cleared?: boolean
+  }) {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent(PREMIUM_ANALYSIS_UPDATED, { detail }))
+  }
+
+  async function rerunAnalysisAfterUploadChange() {
+    const res = await fetch('/api/invoices/analyze', { method: 'POST' })
+    const json = (await res.json()) as {
+      error?: string
+      summary?: unknown
+      uploadId?: string
+      uploadsAnalyzed?: number
+    }
+    if (!res.ok) {
+      throw new Error(json.error || 'Analysis failed.')
+    }
+    dispatchPremiumAnalysisUpdate({
+      summary: json.summary,
+      uploadId: json.uploadId,
+      uploadsAnalyzed: json.uploadsAnalyzed,
+    })
+  }
+
+  async function handleDeleteUpload() {
+    if (!deleteTarget) return
+
+    setDeletingId(deleteTarget.id)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const res = await fetch(`/api/invoices/uploads/${encodeURIComponent(deleteTarget.id)}`, {
+        method: 'DELETE',
+      })
+      const json = (await res.json()) as {
+        error?: string
+        deletedFileName?: string
+        remainingUploads?: number
+        cleared?: boolean
+      }
+
+      if (!res.ok) {
+        throw new Error(json.error || 'Delete failed.')
+      }
+
+      await refreshStoredUploads()
+      setDeleteTarget(null)
+
+      if (json.cleared) {
+        dispatchPremiumAnalysisUpdate({ cleared: true })
+        setSuccess(
+          `Removed "${json.deletedFileName ?? deleteTarget.original_file_name}". No invoice files remain — upload new CSVs to run analysis again.`
+        )
+        return
+      }
+
+      setWorkPhase('analyzing')
+      try {
+        await rerunAnalysisAfterUploadChange()
+        setSuccess(
+          `Removed "${json.deletedFileName ?? deleteTarget.original_file_name}". Analysis updated with your remaining ${json.remainingUploads ?? ''} file(s).`
+        )
+      } catch (analyzeErr: unknown) {
+        const msg = analyzeErr instanceof Error ? analyzeErr.message : 'Analysis failed.'
+        setError(
+          `File removed, but analysis did not finish: ${msg} Use Refresh analysis below to recompute.`
+        )
+      } finally {
+        setWorkPhase('idle')
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Delete failed.')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   async function handleUpload() {
@@ -179,7 +299,7 @@ export function InvoiceCsvUpload() {
           const detail = describePostgrestLikeError(insertErr) || 'Database insert failed.'
           throw new Error(
             insertedCount > 0
-              ? `Saved ${insertedCount} of ${insertedRows.length} file(s), then an error occurred: ${detail} If some files were saved, check Recent uploads or try again with the remaining files.`
+              ? `Saved ${insertedCount} of ${insertedRows.length} file(s), then an error occurred: ${detail} If some files were saved, check your uploaded files list or try again with the remaining files.`
               : detail
           )
         }
@@ -201,23 +321,12 @@ export function InvoiceCsvUpload() {
         }.`
 
       setFiles([])
-      await refreshRecent()
+      await refreshStoredUploads()
 
       setWorkPhase('analyzing')
       setError(null)
       try {
-        const res = await fetch('/api/invoices/analyze', { method: 'POST' })
-        const json = (await res.json()) as { error?: string; summary?: unknown; uploadId?: string; uploadsAnalyzed?: number }
-        if (!res.ok) {
-          throw new Error(json.error || 'Analysis failed.')
-        }
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent(PREMIUM_ANALYSIS_UPDATED, {
-              detail: { summary: json.summary, uploadId: json.uploadId, uploadsAnalyzed: json.uploadsAnalyzed },
-            })
-          )
-        }
+        await rerunAnalysisAfterUploadChange()
         setSuccess(`${uploadNote} Analysis complete — your dashboard below is updated.`)
       } catch (analyzeErr: unknown) {
         const msg = analyzeErr instanceof Error ? analyzeErr.message : 'Analysis failed.'
@@ -302,41 +411,112 @@ export function InvoiceCsvUpload() {
                 type="button"
                 variant="outline"
                 className="border-accent/40 text-accent hover:bg-accent/10"
-                disabled={workPhase !== 'idle'}
+                disabled={workPhase !== 'idle' || loadingUploads}
                 onClick={() => {
-                  refreshRecent().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load uploads.'))
+                  setLoadingUploads(true)
+                  refreshStoredUploads()
+                    .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load uploads.'))
+                    .finally(() => setLoadingUploads(false))
                 }}
               >
-                Refresh
+                Refresh list
               </Button>
             </div>
 
-            {recentUploads.length ? (
-              <div className="pt-2">
-                <div className="font-heading text-sm font-semibold tracking-wide text-accent">Recent uploads</div>
+            <div className="pt-2">
+              <div className="font-heading text-sm font-semibold tracking-wide text-accent">Your uploaded files</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Remove a file to exclude it from Premium Analysis. Deleting the last file clears your dashboard metrics.
+              </p>
+              {loadingUploads ? (
+                <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  Loading uploads…
+                </p>
+              ) : storedUploads.length ? (
                 <div className="mt-2 grid gap-3">
-                  {recentUploads.map((u) => (
-                    <div
-                      key={u.id}
-                      className="rounded-lg border border-accent/20 bg-background p-3 transition-transform duration-200 ease-out hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-foreground">{u.original_file_name}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Uploaded: {new Date(u.created_at).toLocaleString()}
+                  {storedUploads.map((u) => {
+                    const isDeleting = deletingId === u.id
+                    return (
+                      <div
+                        key={u.id}
+                        className="rounded-lg border border-accent/20 bg-background p-3 transition-transform duration-200 ease-out hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">{u.original_file_name}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Uploaded: {new Date(u.created_at).toLocaleString()}
+                            </div>
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              Rows: {u.row_count ?? '—'} · Status: {u.status}
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Rows: {u.row_count ?? '—'}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10"
+                            disabled={workPhase !== 'idle' || isDeleting}
+                            onClick={() => setDeleteTarget(u)}
+                            aria-label={`Delete ${u.original_file_name}`}
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden />
+                            ) : (
+                              <Trash2 className="size-4" aria-hidden />
+                            )}
+                            <span className="sr-only">Delete</span>
+                          </Button>
                         </div>
                       </div>
-                      <div className="mt-2 text-xs text-muted-foreground">Status: {u.status}</div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">No files uploaded yet.</p>
+              )}
+            </div>
+
+            <Dialog
+              open={!!deleteTarget}
+              onOpenChange={(open) => {
+                if (!open && !deletingId) setDeleteTarget(null)
+              }}
+            >
+              <DialogContent showCloseButton={!deletingId}>
+                <DialogHeader>
+                  <DialogTitle>Delete uploaded file?</DialogTitle>
+                  <DialogDescription>
+                    {deleteTarget ? (
+                      <>
+                        <span className="font-medium text-foreground">{deleteTarget.original_file_name}</span> will be
+                        removed from your account. Premium Analysis will recompute using your remaining files, or clear
+                        if this was your last upload.
+                      </>
+                    ) : null}
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!!deletingId}
+                    onClick={() => setDeleteTarget(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={!!deletingId}
+                    onClick={() => void handleDeleteUpload()}
+                  >
+                    {deletingId ? 'Deleting…' : 'Delete file'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </CardContent>
       </Card>

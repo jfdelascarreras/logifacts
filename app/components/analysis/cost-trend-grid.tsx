@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -79,6 +79,91 @@ function previousYtd(points: DailySpendPoint[], key: MetricKey): number {
     .reduce((acc, row) => acc + (row[key] ?? 0), 0)
 }
 
+/** `YYYY-MM-DD` +/- days in UTC. */
+function addDaysUTC(anchor: string, deltaDays: number): string {
+  const y = Number(anchor.slice(0, 4))
+  const m = Number(anchor.slice(5, 7)) - 1
+  const d = Number(anchor.slice(8, 10))
+  const dt = new Date(Date.UTC(y, m, d))
+  dt.setUTCDate(dt.getUTCDate() + deltaDays)
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+}
+
+function sumKeyInInclusiveDateRange(
+  points: DailySpendPoint[],
+  key: MetricKey,
+  startInclusive: string,
+  endInclusive: string
+): number {
+  return points
+    .filter((row) => row.date >= startInclusive && row.date <= endInclusive)
+    .reduce((acc, row) => acc + (row[key] ?? 0), 0)
+}
+
+/** 7 UTC calendar days ending on anchor: [anchor-6, anchor]. */
+function weekSumThroughAnchor(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const start = addDaysUTC(anchor, -6)
+  return sumKeyInInclusiveDateRange(points, key, start, anchor)
+}
+
+/** Prior 7 UTC calendar days: [anchor-13, anchor-7]. */
+function weekPrevSumForHoverAnchor(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const end = addDaysUTC(anchor, -7)
+  const start = addDaysUTC(anchor, -13)
+  return sumKeyInInclusiveDateRange(points, key, start, end)
+}
+
+/** Month containing anchor, only rows on/before anchor. */
+function monthSumThroughAnchor(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const prefix = anchor.slice(0, 7)
+  return points
+    .filter((row) => row.date.startsWith(prefix) && row.date <= anchor)
+    .reduce((acc, row) => acc + (row[key] ?? 0), 0)
+}
+
+function previousMonthYyyyMm(anchor: string): string {
+  const y = Number(anchor.slice(0, 4))
+  const m = Number(anchor.slice(5, 7))
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return anchor.slice(0, 7)
+  if (m === 1) return `${y - 1}-12`
+  return `${y}-${String(m - 1).padStart(2, '0')}`
+}
+
+/** Full previous calendar month in dataset (for hover delta). */
+function previousCalendarMonthSumForAnchor(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const prefix = previousMonthYyyyMm(anchor)
+  return points
+    .filter((row) => row.date.startsWith(prefix))
+    .reduce((acc, row) => acc + (row[key] ?? 0), 0)
+}
+
+function ytdSumThroughAnchor(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const year = anchor.slice(0, 4)
+  return points
+    .filter((row) => row.date.startsWith(year) && row.date <= anchor)
+    .reduce((acc, row) => acc + (row[key] ?? 0), 0)
+}
+
+function isLeapYear(y: number): boolean {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+}
+
+/** Prior-year YTD through same calendar month-day as anchor (Feb 29 clamps to Feb 28 if needed). */
+function ytdPrevYearThroughSameCalendar(points: DailySpendPoint[], key: MetricKey, anchor: string): number {
+  const year = Number(anchor.slice(0, 4))
+  const prevYear = year - 1
+  const mm = anchor.slice(5, 7)
+  const dd = anchor.slice(8, 10)
+  let endStr = `${prevYear}-${mm}-${dd}`
+  if (mm === '02' && dd === '29' && !isLeapYear(prevYear)) {
+    endStr = `${prevYear}-02-28`
+  }
+  const prefix = String(prevYear)
+  return points
+    .filter((row) => row.date.startsWith(prefix) && row.date <= endStr)
+    .reduce((acc, row) => acc + (row[key] ?? 0), 0)
+}
+
 function deltaText(current: number, previous: number): string {
   const diff = current - previous
   const sign = diff > 0 ? '+' : ''
@@ -123,14 +208,22 @@ function Sparkline({
   dates,
   metricTitle,
   strokeWidth = 2.25,
+  onHoverIndexChange,
 }: {
   values: number[]
   stroke: string
   dates: string[]
   metricTitle: string
   strokeWidth?: number
+  /** Fired whenever the hovered chart index changes (including null when pointer leaves chart). */
+  onHoverIndexChange?: (index: number | null) => void
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    onHoverIndexChange?.(hoveredIdx)
+  }, [hoveredIdx, onHoverIndexChange])
+
   if (!values.length) return <div className="h-44 rounded-md border border-border bg-muted/20" />
   const width = 640
   const height = 220
@@ -184,7 +277,11 @@ function Sparkline({
           </>
         ) : null}
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-40 w-full"
+        onMouseLeave={() => setHoveredIdx(null)}
+      >
         {points.map((point, idx) => {
           const zoneWidth = idx === 0 ? 12 : Math.max(8, point.x - points[idx - 1].x)
           return (
@@ -201,7 +298,6 @@ function Sparkline({
               onMouseMove={() => setHoveredIdx(idx)}
               onFocus={() => setHoveredIdx(idx)}
               onBlur={() => setHoveredIdx(null)}
-              onMouseLeave={() => setHoveredIdx((prev) => (prev === idx ? null : prev))}
             />
           )
         })}
@@ -255,58 +351,96 @@ function Sparkline({
   )
 }
 
+function CostTrendMetricCard({
+  metric,
+  dailySpend,
+}: {
+  metric: (typeof METRICS)[number]
+  dailySpend: DailySpendPoint[]
+}) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const handleHoverIndexChange = useCallback((idx: number | null) => {
+    setHoverIdx(idx)
+  }, [])
+
+  const dates = dailySpend.map((row) => row.date)
+  const series = dailySpend.map((row) => row[metric.key] ?? 0)
+  const total = series.reduce((a, b) => a + b, 0)
+
+  const anchorDate = hoverIdx !== null ? dates[hoverIdx] ?? null : null
+
+  let week: number
+  let weekPrev: number
+  let month: number
+  let monthPrev: number
+  let ytd: number
+  let ytdPrev: number
+
+  if (anchorDate !== null && anchorDate.length >= 10) {
+    week = weekSumThroughAnchor(dailySpend, metric.key, anchorDate)
+    weekPrev = weekPrevSumForHoverAnchor(dailySpend, metric.key, anchorDate)
+    month = monthSumThroughAnchor(dailySpend, metric.key, anchorDate)
+    monthPrev = previousCalendarMonthSumForAnchor(dailySpend, metric.key, anchorDate)
+    ytd = ytdSumThroughAnchor(dailySpend, metric.key, anchorDate)
+    ytdPrev = ytdPrevYearThroughSameCalendar(dailySpend, metric.key, anchorDate)
+  } else {
+    week = sumByDays(dailySpend, metric.key, 7)
+    weekPrev = previousByDays(dailySpend, metric.key, 7)
+    month = sumByCurrentMonth(dailySpend, metric.key)
+    monthPrev = sumByPreviousMonth(dailySpend, metric.key)
+    ytd = sumByYtd(dailySpend, metric.key)
+    ytdPrev = previousYtd(dailySpend, metric.key)
+  }
+
+  return (
+    <Card className="border-border bg-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base text-foreground">
+          {metric.title} | ${formatCompact(total)}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+          <div>
+            <div className="font-medium text-foreground">Week</div>
+            <div>${formatCompact(week)}</div>
+            <div>{deltaText(week, weekPrev)}</div>
+          </div>
+          <div>
+            <div className="font-medium text-foreground">Month</div>
+            <div>${formatCompact(month)}</div>
+            <div>{deltaText(month, monthPrev)}</div>
+          </div>
+          <div>
+            <div className="font-medium text-foreground">YTD</div>
+            <div>${formatCompact(ytd)}</div>
+            <div>{deltaText(ytd, ytdPrev)}</div>
+          </div>
+        </div>
+        {anchorDate ? (
+          <p className="text-[11px] text-muted-foreground">Rollups as of {anchorDate}</p>
+        ) : null}
+        <Sparkline
+          values={series}
+          stroke={metric.strokeVar}
+          dates={dates}
+          metricTitle={metric.title}
+          strokeWidth={metric.strokeWidth}
+          onHoverIndexChange={handleHoverIndexChange}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
 export function CostTrendGrid({ dailySpend }: { dailySpend: DailySpendPoint[] }) {
   if (!dailySpend.length) return null
-  const dates = dailySpend.map((row) => row.date)
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {METRICS.map((metric) => {
-        const series = dailySpend.map((row) => row[metric.key] ?? 0)
-        const total = series.reduce((a, b) => a + b, 0)
-        const week = sumByDays(dailySpend, metric.key, 7)
-        const weekPrev = previousByDays(dailySpend, metric.key, 7)
-        const month = sumByCurrentMonth(dailySpend, metric.key)
-        const monthPrev = sumByPreviousMonth(dailySpend, metric.key)
-        const ytd = sumByYtd(dailySpend, metric.key)
-        const ytdPrev = previousYtd(dailySpend, metric.key)
-
-        return (
-          <Card key={metric.key} className="border-border bg-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base text-foreground">
-                {metric.title} | ${formatCompact(total)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-                <div>
-                  <div className="font-medium text-foreground">Week</div>
-                  <div>${formatCompact(week)}</div>
-                  <div>{deltaText(week, weekPrev)}</div>
-                </div>
-                <div>
-                  <div className="font-medium text-foreground">Month</div>
-                  <div>${formatCompact(month)}</div>
-                  <div>{deltaText(month, monthPrev)}</div>
-                </div>
-                <div>
-                  <div className="font-medium text-foreground">YTD</div>
-                  <div>${formatCompact(ytd)}</div>
-                  <div>{deltaText(ytd, ytdPrev)}</div>
-                </div>
-              </div>
-              <Sparkline
-                values={series}
-                stroke={metric.strokeVar}
-                dates={dates}
-                metricTitle={metric.title}
-                strokeWidth={metric.strokeWidth}
-              />
-            </CardContent>
-          </Card>
-        )
-      })}
+      {METRICS.map((metric) => (
+        <CostTrendMetricCard key={metric.key} metric={metric} dailySpend={dailySpend} />
+      ))}
     </div>
   )
 }

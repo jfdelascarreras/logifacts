@@ -25,6 +25,7 @@ import {
   type InvoiceAnalysisFilterMeta,
   type InvoiceAnalysisFilters,
 } from '@/lib/invoices/analysis-summary'
+import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
 import { cn } from '@/lib/utils'
 
 type Measures = {
@@ -420,7 +421,13 @@ export function PremiumDashboard() {
   /** After upload, the CSV card runs POST /analyze and dispatches this — update dashboard without a second click. */
   useEffect(() => {
     function onPremiumAnalysisUpdated(e: Event) {
-      const ce = e as CustomEvent<{ summary?: unknown }>
+      const ce = e as CustomEvent<{ summary?: unknown; cleared?: boolean }>
+      if (ce.detail?.cleared) {
+        setSummary(null)
+        setFromCache(false)
+        void loadHistory()
+        return
+      }
       const raw = ce.detail?.summary as (Summary & Record<string, unknown>) | undefined
       if (raw?.measures) {
         applySummaryPayload(raw, { hydrateFiltersFromApplied: false })
@@ -558,47 +565,23 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
-        {summary?.ingestDiagnostics &&
-        (summary.ingestDiagnostics.duplicateUploadRowsSkipped > 0 ||
-          summary.ingestDiagnostics.duplicateChargeRowsDropped > 0 ||
-          summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0) ? (
+        {summary?.ingestDiagnostics && summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0 ? (
           <Card className="border-amber-500/40 bg-amber-500/10">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base text-foreground">Import adjustments</CardTitle>
+              <CardTitle className="text-base text-foreground">Rows excluded</CardTitle>
               <CardDescription className="text-foreground/80">
-                Some rows were skipped or merged so totals are not inflated by duplicate uploads or corrupted
-                identifiers. If you rely on counts matching your source exactly, compare these numbers against your
-                files.
+                Some charge lines were not included because key fields matched a scientific-notation corruption
+                pattern. Compare totals to your source file; if spreadsheets edited the CSV, format identifier columns as
+                text before export.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-foreground">
-              <ul className="list-disc space-y-1 pl-5">
-                {summary.ingestDiagnostics.duplicateUploadRowsSkipped > 0 ? (
-                  <li>
-                    Duplicate upload files skipped:{' '}
-                    <span className="font-medium tabular-nums">
-                      {summary.ingestDiagnostics.duplicateUploadRowsSkipped}
-                    </span>{' '}
-                    (same file content hash as an already-processed upload)
-                  </li>
-                ) : null}
-                {summary.ingestDiagnostics.duplicateChargeRowsDropped > 0 ? (
-                  <li>
-                    Duplicate charge lines merged:{' '}
-                    <span className="font-medium tabular-nums">
-                      {summary.ingestDiagnostics.duplicateChargeRowsDropped}
-                    </span>
-                  </li>
-                ) : null}
-                {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0 ? (
-                  <li>
-                    Rows dropped after identifier sanity check (e.g. scientific-notation-shaped IDs):{' '}
-                    <span className="font-medium tabular-nums">
-                      {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption}
-                    </span>
-                  </li>
-                ) : null}
-              </ul>
+              <p>
+                Rows excluded:{' '}
+                <span className="font-medium tabular-nums">
+                  {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption}
+                </span>
+              </p>
             </CardContent>
           </Card>
         ) : null}
@@ -927,17 +910,17 @@ export function PremiumDashboard() {
                   </thead>
                   <tbody>
                     {accountBreakdown.map((row) => {
-                      const isTruncated = /^[+-]?\d+\.?\d*[eE][+\-]?\d+$/.test(row.accountNumber)
+                      const needsSciNotationReview = identifierLooksScientificNotationCorrupted(row.accountNumber)
                       return (
                       <tr key={row.accountNumber} className="border-b border-border">
                         <td className="px-3 py-2 font-medium text-foreground">
                           <span>{row.accountNumber}</span>
-                          {isTruncated && (
+                          {needsSciNotationReview && (
                             <span
                               className="ml-2 rounded bg-destructive/15 px-1.5 py-0.5 text-xs font-normal text-destructive"
-                              title="Excel converted this account number to scientific notation when exporting the CSV. The original digits cannot be recovered — re-export the CSV with the Account Number column formatted as Text."
+                              title="This value matches the same float-like scientific notation pattern used during import cleanup. Confirm it against your UPS export; if a spreadsheet rewrote identifiers, export again with Account Number formatted as Text."
                             >
-                              truncated by Excel
+                              Looks like numeric sci notation — verify this account
                             </span>
                           )}
                         </td>
