@@ -1,5 +1,16 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Supabase CLI state
+supabase/.temp/
+supabase/.seed-sql-chunks/
+
+# Generated script artifacts (dot-prefixed outputs in scripts/)
+scripts/.*
+.mapping-rows-export.json
+
+# Personal / non-project files
+email-signature.html
+
 # dependencies
 /node_modules
 /.pnp
