@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
-import { Download, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
+import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import {
@@ -166,6 +167,7 @@ export function PremiumDashboard() {
   const [error, setError] = useState<string | null>(null)
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
+  const [invoicesExpanded, setInvoicesExpanded] = useState(false)
 
   const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
     const res = await fetch('/api/invoices/analyze', { method: 'GET', cache: 'no-store' })
@@ -1039,6 +1041,14 @@ export function PremiumDashboard() {
           </Card>
         ) : null}
 
+        {history[0]?.summary?.monthlySpend && history[0].summary.monthlySpend.length >= 2 ? (
+          <MomWaterfall
+            monthlySpend={history[0].summary.monthlySpend}
+            filterYear={filterYear}
+            filterMonths={filterMonths}
+          />
+        ) : null}
+
         {detailByInvoice && summary?.spendByInvoice?.length ? (
           <Card className="border-accent/25 bg-card">
             <CardHeader>
@@ -1150,62 +1160,84 @@ export function PremiumDashboard() {
           return (
             <Card className="border-accent/25 bg-card">
               <CardHeader>
-                <CardTitle>Invoices Analyzed</CardTitle>
-                <CardDescription>
-                  {latestInvoices.length.toLocaleString()} invoice{latestInvoices.length !== 1 ? 's' : ''} from the latest run · {new Date(history[0].updated_at).toLocaleString()}
-                </CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle>Invoices Analyzed</CardTitle>
+                    <CardDescription>
+                      {latestInvoices.length.toLocaleString()} invoice{latestInvoices.length !== 1 ? 's' : ''} · total{' '}
+                      <span className="font-medium text-foreground">
+                        ${latestInvoices.reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {' · '}{new Date(history[0].updated_at).toLocaleString()}
+                    </CardDescription>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInvoicesExpanded(v => !v)}
+                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+                    aria-expanded={invoicesExpanded}
+                  >
+                    {invoicesExpanded ? (
+                      <><ChevronUp className="size-4" aria-hidden /> Hide</>
+                    ) : (
+                      <><ChevronDown className="size-4" aria-hidden /> Show all</>
+                    )}
+                  </button>
+                </div>
               </CardHeader>
-              <CardContent>
-                <div
-                  className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  tabIndex={0}
-                  role="region"
-                  aria-label="Invoices analyzed table"
-                >
-                  <table className="w-full min-w-[420px] text-left text-sm">
-                    <thead className="text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-3 py-2 font-medium">Invoice #</th>
-                        <th className="px-3 py-2 font-medium">Invoice Date</th>
-                        <th className="px-3 py-2 font-medium text-right">Total Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {latestInvoices.map((inv) => (
-                        <tr key={`${inv.accountNumber}-${inv.invoiceNumber}`} className="border-b border-border">
-                          <td className="px-3 py-2 font-medium text-foreground">{inv.invoiceNumber}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{inv.invoiceDate ?? '—'}</td>
+              {invoicesExpanded && (
+                <CardContent>
+                  <div
+                    className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Invoices analyzed table"
+                  >
+                    <table className="w-full min-w-[420px] text-left text-sm">
+                      <thead className="text-muted-foreground">
+                        <tr className="border-b border-border">
+                          <th className="px-3 py-2 font-medium">Invoice #</th>
+                          <th className="px-3 py-2 font-medium">Invoice Date</th>
+                          <th className="px-3 py-2 font-medium text-right">Total Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {latestInvoices.map((inv) => (
+                          <tr key={`${inv.accountNumber}-${inv.invoiceNumber}`} className="border-b border-border">
+                            <td className="px-3 py-2 font-medium text-foreground">{inv.invoiceNumber}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{inv.invoiceDate ?? '—'}</td>
+                            <td className="px-3 py-2 text-right text-foreground">
+                              {inv.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-border bg-muted/30 font-semibold">
+                          <td className="px-3 py-2 text-foreground" colSpan={2}>Total</td>
                           <td className="px-3 py-2 text-right text-foreground">
-                            {inv.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {latestInvoices
+                              .reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0)
+                              .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-border bg-muted/30 font-semibold">
-                        <td className="px-3 py-2 text-foreground" colSpan={2}>Total</td>
-                        <td className="px-3 py-2 text-right text-foreground">
-                          {latestInvoices
-                            .reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0)
-                            .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => exportSpendByInvoiceToCsv(latestInvoices, history[0].updated_at)}
-                  >
-                    <Download className="size-4" aria-hidden />
-                    Export to Excel
-                  </Button>
-                </div>
-              </CardContent>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => exportSpendByInvoiceToCsv(latestInvoices, history[0].updated_at)}
+                    >
+                      <Download className="size-4" aria-hidden />
+                      Export to Excel
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           )
         })()}

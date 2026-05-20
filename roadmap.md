@@ -60,3 +60,42 @@ Milestones are implemented sequentially via `/implement [N]`. Each entry is the 
 - `lib/pricing/` must remain pure (no Supabase, no HTTP, no side effects). Origin ZIP is passed in as a function argument, not read from a session inside lib.
 - Rate logic must be fully tested before the API route is wired up.
 - FedEx and WWE pricing are deferred to future milestones.
+
+---
+
+## M-2: Live UPS Fuel Surcharge
+
+**Status:** not implemented
+**Area:** pricing
+**Goal:** Replace the hardcoded 17.2% fuel surcharge estimate with the actual weekly rate published by UPS, so cost estimates reflect real invoice charges.
+
+**Touches:**
+- `lib/pricing/ups-fuel-surcharge.ts` — fetches and caches the current fuel surcharge rate; pure function accepting a fetcher so it remains testable without HTTP
+- `app/api/pricing/fuel-surcharge/route.ts` — `GET /api/pricing/fuel-surcharge`; fetches rate from UPS, caches in Upstash Redis with a 7-day TTL (rate changes weekly on Mondays)
+- `app/api/pricing/estimate/route.ts` — reads cached fuel surcharge rate instead of the hardcoded constant
+- `lib/pricing/ups-rates.ts` — remove `FUEL_SURCHARGE_RATE` constant once live rate is wired up
+- `app/components/pricing/rate-result.tsx` — update fuel surcharge label to show actual % instead of "est. 17.2%"
+
+**Notes / constraints:**
+- UPS publishes the weekly fuel surcharge at `ups.com/us/en/support/shipping-support/shipping-costs-rates/fuel-surcharges.page` — rate changes every Monday
+- Cache in Upstash Redis (already available in the stack) with TTL of 7 days; fall back to 17.2% if fetch fails so the estimator never breaks
+- `lib/pricing/` must remain pure — HTTP fetch belongs in the API route, not in lib
+- Do not hardcode the scrape URL in lib; pass it in as a parameter or env var
+
+---
+
+## Yearly Maintenance
+
+### UPS Pricing Data (every January)
+
+UPS publishes updated daily rates and occasionally redraws zone boundaries at the start of each year.
+
+**Steps:**
+1. Download the new daily rates XLSX from UPS (`daily-rates-us-en.xlsx`) and replace the one in `Invoices skills/ups-plan-invoice-csv/`
+2. If zone boundaries changed, re-download the zone XLS files from [UPS Zone Advisor](https://www.ups.com/us/en/support/shipping-support/shipping-costs-rates/zone-locator.page) for each origin region and replace the files in `Invoices skills/ups-plan-invoice-csv/`
+3. Re-run the conversion script: `pnpm dlx tsx scripts/convert-ups-data.ts`
+4. This regenerates `lib/pricing/data/ups-rates.json` and all `lib/pricing/data/zone-charts/*.json`
+5. Run `pnpm test` to confirm the rate spot-checks still pass (update expected values in `lib/pricing/ups-estimate.test.ts` if rates changed)
+6. Commit and deploy
+
+**Fuel surcharge note:** The 17.2% fuel surcharge in `lib/pricing/ups-rates.ts` (`FUEL_SURCHARGE_RATE`) is a fixed estimate. UPS publishes the actual rate weekly — see M-2 for automating this.

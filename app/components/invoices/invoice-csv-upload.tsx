@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
 import { parseInvoiceCsvText } from '@/lib/invoices/csv'
@@ -34,6 +34,14 @@ function describePostgrestLikeError(e: unknown): string {
 /** Keeps each request under typical gateway / PostgREST body limits when many CSVs are selected. */
 const INSERT_CHUNK_SIZE = 5
 
+const UPLOADS_PREVIEW_COUNT = 5
+
+/** Strips RFC 5987 charset prefix (e.g., "UTF-8'", "UTF-8''", "UTF-8'en'") from filenames
+ *  that Windows saves when downloading files with encoded Content-Disposition headers. */
+function cleanFilename(name: string): string {
+  return name.replace(/^(UTF-8|ISO-8859-\d+)'[a-z]*'?/i, '') || name
+}
+
 type StoredUpload = {
   id: string
   original_file_name: string
@@ -53,6 +61,7 @@ export function InvoiceCsvUpload() {
   const [storedUploads, setStoredUploads] = useState<StoredUpload[]>([])
   const [loadingUploads, setLoadingUploads] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<StoredUpload | null>(null)
+  const [showAllUploads, setShowAllUploads] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const refreshStoredUploads = useCallback(async () => {
@@ -256,7 +265,7 @@ export function InvoiceCsvUpload() {
 
         insertedRows.push({
           user_id: user.id,
-          original_file_name: file.name,
+          original_file_name: cleanFilename(file.name),
           csv_text: csvText.replace(/^\uFEFF/, ''),
           row_count: mappedRecords.length,
           status: 'uploaded',
@@ -435,8 +444,9 @@ export function InvoiceCsvUpload() {
                 </p>
               ) : storedUploads.length ? (
                 <div className="mt-2 grid gap-3">
-                  {storedUploads.map((u) => {
+                  {(showAllUploads ? storedUploads : storedUploads.slice(0, UPLOADS_PREVIEW_COUNT)).map((u) => {
                     const isDeleting = deletingId === u.id
+                    const displayName = cleanFilename(u.original_file_name)
                     return (
                       <div
                         key={u.id}
@@ -444,7 +454,7 @@ export function InvoiceCsvUpload() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium text-foreground">{u.original_file_name}</div>
+                            <div className="truncate text-sm font-medium text-foreground">{displayName}</div>
                             <div className="mt-1 text-xs text-muted-foreground">
                               Uploaded: {new Date(u.created_at).toLocaleString()}
                             </div>
@@ -459,7 +469,7 @@ export function InvoiceCsvUpload() {
                             className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10"
                             disabled={workPhase !== 'idle' || isDeleting}
                             onClick={() => setDeleteTarget(u)}
-                            aria-label={`Delete ${u.original_file_name}`}
+                            aria-label={`Delete ${displayName}`}
                           >
                             {isDeleting ? (
                               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -472,6 +482,20 @@ export function InvoiceCsvUpload() {
                       </div>
                     )
                   })}
+
+                  {storedUploads.length > UPLOADS_PREVIEW_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllUploads(v => !v)}
+                      className="flex items-center gap-1.5 text-sm text-accent hover:underline"
+                    >
+                      {showAllUploads ? (
+                        <><ChevronUp className="size-4" aria-hidden /> Show less</>
+                      ) : (
+                        <><ChevronDown className="size-4" aria-hidden /> See all {storedUploads.length} files</>
+                      )}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="mt-3 text-sm text-muted-foreground">No files uploaded yet.</p>

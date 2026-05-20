@@ -56,10 +56,14 @@ export async function computePremiumInvoiceAnalysis(
 > {
   const appliedFilters = normalizeInvoiceAnalysisFilters(filtersRaw)
 
-  const [{ data: uploads, error: uploadError }, { data: mappings, error: mappingsError }] = await Promise.all([
+  // Fetch upload metadata first (no csv_text — avoids statement timeout on large file sets).
+  // Then fetch csv_text in batches to stay under Supabase's per-statement row-data limit.
+  const CSV_FETCH_BATCH = 10
+
+  const [{ data: uploadMeta, error: uploadError }, { data: mappings, error: mappingsError }] = await Promise.all([
     supabase
       .from('invoice_uploads')
-      .select('id, csv_text, created_at, content_sha256')
+      .select('id, created_at, content_sha256')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -87,8 +91,23 @@ export async function computePremiumInvoiceAnalysis(
     return { ok: false, status: 400, message: uploadError.message }
   }
 
-  if (!uploads || uploads.length === 0) {
+  if (!uploadMeta || uploadMeta.length === 0) {
     return { ok: false, status: 404, message: 'No invoice uploads found' }
+  }
+
+  // Fetch csv_text in batches to stay under Supabase statement timeout.
+  const uploads: Array<{ id: string; created_at: string; content_sha256: string | null; csv_text: string | null }> = []
+  const ids = uploadMeta.map(u => u.id)
+  for (let i = 0; i < ids.length; i += CSV_FETCH_BATCH) {
+    const batchIds = ids.slice(i, i + CSV_FETCH_BATCH)
+    const { data: batch, error: batchErr } = await supabase
+      .from('invoice_uploads')
+      .select('id, created_at, content_sha256, csv_text')
+      .in('id', batchIds)
+    if (batchErr) {
+      return { ok: false, status: 400, message: batchErr.message }
+    }
+    if (batch) uploads.push(...batch)
   }
 
   const uploadsMissingHash = uploads.filter((u) => !u.content_sha256 || String(u.content_sha256).length === 0)
