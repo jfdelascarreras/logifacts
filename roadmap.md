@@ -6,7 +6,7 @@ Milestones are implemented sequentially via `/implement [N]`. Each entry is the 
 
 ## M-1: UPS Rate Estimator (Club Colors Contract)
 
-**Status:** not implemented
+**Status:** implemented
 **Area:** pricing
 **Goal:** Port the Club Colors UPS quoting tool (Contract D001207201, Addendum B) into the app as a standalone `/pricing` page — origin ZIP comes from the authenticated user's profile, destination ZIP drives zone lookup, and the result shows DIM weight, stacked contract discounts, and a full per-shipment cost breakdown.
 
