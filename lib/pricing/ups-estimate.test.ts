@@ -11,12 +11,6 @@ import type { ZoneChart } from './types'
 import chart601Json from './data/zone-charts/601.json'
 const CHART_601 = chart601Json as unknown as ZoneChart
 
-// Ground 5 lbs zone 5: published $18.65
-// Discounts: svc 35% + tier 16% + PLD 5% = 56%
-// netTC = 18.65 × 0.44 = 8.206
-// fuel  = 8.206 × 0.172 = 1.4115
-// total = 9.617
-
 describe('estimateUPS — input validation', () => {
   it('errors on weight = 0', () => {
     const r = estimateUPS({ weightLbs: 0, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601 })
@@ -125,33 +119,36 @@ describe('estimateUPS — billable weight', () => {
 })
 
 describe('estimateUPS — rate calculation', () => {
-  it('Ground 5 lbs Chicago→NYC: correct published rate and discounts', () => {
+  it('Ground 5 lbs Chicago→NYC: correct published rate, no discount by default', () => {
     const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601 })
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const b = r.breakdown
     expect(b.publishedRate).toBe(18.65)
-    expect(b.serviceIncentivePct).toBe(0.35)
-    expect(b.tierIncentivePct).toBe(0.16)
-    expect(b.pldBonusPct).toBe(0.05)
-    expect(b.totalDiscountPct).toBe(0.56)
+    expect(b.contractDiscountPct).toBe(0)
+    expect(b.netTransportationCharge).toBeCloseTo(18.65, 2)
+    expect(b.fuelSurcharge).toBeCloseTo(18.65 * 0.172, 2)
+    expect(b.residentialSurcharge).toBe(0)
+    expect(b.totalEstimatedCharge).toBeCloseTo(18.65 * 1.172, 2)
+  })
+
+  it('applies contract discount correctly', () => {
+    // 56% discount on Ground 5 lbs zone 5: netTC = 18.65 × 0.44 = 8.206
+    const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601, contractDiscountPct: 0.56 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const b = r.breakdown
+    expect(b.contractDiscountPct).toBe(0.56)
     expect(b.netTransportationCharge).toBeCloseTo(8.206, 2)
     expect(b.fuelSurcharge).toBeCloseTo(1.411, 2)
-    expect(b.residentialSurcharge).toBe(0)
     expect(b.totalEstimatedCharge).toBeCloseTo(9.617, 2)
   })
 
-  it('Ground service incentive steps with weight (9 lbs = 38%, 11 lbs = 41%)', () => {
-    const r9 = estimateUPS({ weightLbs: 9, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601 })
-    expect(r9.ok).toBe(true)
-    if (!r9.ok) return
-    expect(r9.breakdown.serviceIncentivePct).toBe(0.38) // ≤10 lbs tier
-    expect(r9.breakdown.totalDiscountPct).toBeCloseTo(0.59, 2)
-
-    const r11 = estimateUPS({ weightLbs: 11, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601 })
-    expect(r11.ok).toBe(true)
-    if (!r11.ok) return
-    expect(r11.breakdown.serviceIncentivePct).toBe(0.41) // ≤20 lbs tier
+  it('caps discount at 95%', () => {
+    const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601, contractDiscountPct: 0.99 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.breakdown.contractDiscountPct).toBe(0.95)
   })
 
   it('adds residential surcharge of $2.52', () => {
@@ -159,7 +156,6 @@ describe('estimateUPS — rate calculation', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.breakdown.residentialSurcharge).toBe(2.52)
-    expect(r.breakdown.totalEstimatedCharge).toBeCloseTo(9.617 + 2.52, 1)
   })
 
   it('NDA 5 lbs Chicago→NYC: correct zone and published rate', () => {
@@ -169,29 +165,13 @@ describe('estimateUPS — rate calculation', () => {
     const b = r.breakdown
     expect(b.zone).toBe(105)
     expect(b.publishedRate).toBe(129.93)
-    expect(b.totalDiscountPct).toBeCloseTo(0.714, 3)
-    expect(b.netTransportationCharge).toBeCloseTo(37.16, 1)
   })
 
-  it('3-Day 5 lbs Chicago→NYC: zone 305', () => {
+  it('3-Day 5 lbs Chicago→NYC: zone 305 and published rate', () => {
     const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: '3day', residential: false, zoneChart: CHART_601 })
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.breakdown.zone).toBe(305)
     expect(r.breakdown.publishedRate).toBe(41.01)
-  })
-
-  it('NDA Saver flags estimatedContractTerms', () => {
-    const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: 'nda_saver', residential: false, zoneChart: CHART_601 })
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.breakdown.estimatedContractTerms).toBe(true)
-  })
-
-  it('Ground does not flag estimatedContractTerms', () => {
-    const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: 'ground', residential: false, zoneChart: CHART_601 })
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.breakdown.estimatedContractTerms).toBe(false)
   })
 })

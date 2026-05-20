@@ -25,6 +25,7 @@ export type UPSEstimateInput = {
   service: UPSService
   residential: boolean
   zoneChart: ZoneChart
+  contractDiscountPct?: number  // 0–0.95; defaults to 0 (no discount)
 }
 
 export type UPSRateBreakdown = {
@@ -35,15 +36,11 @@ export type UPSRateBreakdown = {
   billableWeightSource: 'actual' | 'dimensional'
   zone: number
   publishedRate: number
-  serviceIncentivePct: number
-  tierIncentivePct: number
-  pldBonusPct: number
-  totalDiscountPct: number
+  contractDiscountPct: number
   netTransportationCharge: number
   fuelSurcharge: number
   residentialSurcharge: number
   totalEstimatedCharge: number
-  estimatedContractTerms: boolean
 }
 
 export type UPSEstimateResult =

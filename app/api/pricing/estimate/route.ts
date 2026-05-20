@@ -48,6 +48,7 @@ export async function POST(req: Request) {
     destinationZip,
     service,
     residential,
+    contractDiscountPct,
   } = body as Record<string, unknown>
 
   if (typeof weightLbs !== 'number' || weightLbs <= 0) {
@@ -91,6 +92,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Zone chart unavailable for this origin ZIP.' }, { status: 422 })
   }
 
+  const parsedDiscount = typeof contractDiscountPct === 'number'
+    ? contractDiscountPct
+    : undefined
+
   const result = estimateUPS({
     weightLbs,
     dimensionsIn: parsedDims,
@@ -98,6 +103,7 @@ export async function POST(req: Request) {
     service: service as UPSService,
     residential: Boolean(residential),
     zoneChart,
+    contractDiscountPct: parsedDiscount,
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 422 })

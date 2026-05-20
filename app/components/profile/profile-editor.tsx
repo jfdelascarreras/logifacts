@@ -14,6 +14,7 @@ interface ProfileEditorProps {
   employees: string
   industry: string
   companyPictureUrl: string
+  originZip: string
 }
 
 export function ProfileEditor({
@@ -23,6 +24,7 @@ export function ProfileEditor({
   employees,
   industry,
   companyPictureUrl,
+  originZip,
 }: ProfileEditorProps) {
   const [form, setForm] = useState({
     fullName,
@@ -30,6 +32,7 @@ export function ProfileEditor({
     employees,
     industry,
     companyPictureUrl,
+    originZip,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -64,6 +67,7 @@ export function ProfileEditor({
           employees: form.employees,
           industry: form.industry,
           company_picture_url: form.companyPictureUrl,
+          origin_zip: form.originZip,
         },
       })
 
@@ -140,13 +144,25 @@ export function ProfileEditor({
               placeholder="e.g. 50 to 99"
             />
           </div>
-          <div className="space-y-2 sm:col-span-2">
+          <div className="space-y-2">
             <Label htmlFor="industry">Industry</Label>
             <Input
               id="industry"
               value={form.industry}
               onChange={(event) => handleChange('industry', event.target.value)}
               placeholder="e.g. Agriculture/Forestry/Fishing/Mining"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="originZip">Shipping Origin ZIP</Label>
+            <Input
+              id="originZip"
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              value={form.originZip}
+              onChange={(event) => handleChange('originZip', event.target.value.replace(/\D/g, '').slice(0, 5))}
+              placeholder="e.g. 60169"
             />
           </div>
         </div>

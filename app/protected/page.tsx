@@ -29,6 +29,7 @@ export default async function ProtectedPage() {
           employees={(metadata.employees as string | undefined) ?? ''}
           industry={(metadata.industry as string | undefined) ?? ''}
           companyPictureUrl={(metadata.company_picture_url as string | undefined) ?? ''}
+          originZip={(metadata.origin_zip as string | undefined) ?? ''}
         />
         <CloseAccountSection email={user.email ?? ''} />
       </div>

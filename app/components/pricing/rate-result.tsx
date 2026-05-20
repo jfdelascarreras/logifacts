@@ -22,15 +22,11 @@ export function RateResult({ breakdown: b }: Props) {
     dimWeightLbs,
     zone,
     publishedRate,
-    serviceIncentivePct,
-    tierIncentivePct,
-    pldBonusPct,
-    totalDiscountPct,
+    contractDiscountPct,
     netTransportationCharge,
     fuelSurcharge,
     residentialSurcharge,
     totalEstimatedCharge,
-    estimatedContractTerms,
   } = b
 
   return (
@@ -68,11 +64,10 @@ export function RateResult({ breakdown: b }: Props) {
         </div>
 
         {/* Discount chips */}
-        <div className="grid grid-cols-3 gap-px bg-border">
+        <div className="grid grid-cols-2 gap-px bg-border">
           {[
-            { label: 'Service Disc', value: pct(serviceIncentivePct) },
-            { label: 'Tier Disc', value: pct(tierIncentivePct) },
-            { label: 'Total Off List', value: pct(totalDiscountPct) },
+            { label: 'Contract Discount', value: contractDiscountPct > 0 ? pct(contractDiscountPct) : 'None' },
+            { label: 'Fuel Surcharge', value: '17.2%' },
           ].map(({ label, value }) => (
             <div key={label} className="bg-card p-3">
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -90,13 +85,15 @@ export function RateResult({ breakdown: b }: Props) {
           </p>
           {[
             { label: 'Published List Rate', value: fmt(publishedRate), className: '' },
-            { label: `Service Incentive (${pct(serviceIncentivePct)})`, value: `−${fmt(publishedRate * serviceIncentivePct)}`, className: 'text-red-400' },
-            { label: `Tier Incentive (${pct(tierIncentivePct)})`, value: `−${fmt(publishedRate * tierIncentivePct)}`, className: 'text-red-400' },
-            { label: `PLD Bonus (${pct(pldBonusPct)})`, value: `−${fmt(publishedRate * pldBonusPct)}`, className: 'text-red-400' },
+            ...(contractDiscountPct > 0 ? [{
+              label: `Contract Discount (${pct(contractDiscountPct)})`,
+              value: `−${fmt(publishedRate * contractDiscountPct)}`,
+              className: 'text-red-400',
+            }] : []),
           ].map(({ label, value, className }) => (
             <div key={label} className="flex justify-between py-1 border-b border-border text-sm">
               <span className="text-muted-foreground">{label}</span>
-              <span className={cn('font-mono font-medium', className)}>{value}</span>
+              <span className={cn('font-mono font-medium', className ?? '')}>{value}</span>
             </div>
           ))}
 
@@ -138,15 +135,8 @@ export function RateResult({ breakdown: b }: Props) {
         </div>
       </div>
 
-      {estimatedContractTerms && (
-        <p className="text-xs text-amber-500/80">
-          NDA Saver contract discount terms are estimated — not specified in Contract D001207201 Addendum B.
-        </p>
-      )}
-
       <p className="text-xs text-muted-foreground text-center">
-        Rates based on UPS Contract D001207201 Addendum B. Published list rates are 2026 UPS Daily Rates.
-        Fuel surcharge varies weekly. Quarterly rebate (3%) not included. All figures are estimates.
+        Published list rates are 2026 UPS Daily Rates. Fuel surcharge varies weekly. All figures are estimates.
       </p>
     </div>
   )

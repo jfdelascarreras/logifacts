@@ -14,7 +14,7 @@ export default async function PricingPage() {
   return (
     <AuthenticatedShell
       title="UPS Rate Estimator"
-      subtitle="Contract D001207201 · Addendum B"
+      subtitle="Estimate your shipping cost by service and destination"
     >
       {!originZip && (
         <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">

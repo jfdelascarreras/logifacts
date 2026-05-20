@@ -24,6 +24,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
   const [destinationZip, setDestinationZip] = useState('')
   const [service, setService] = useState<UPSService>('ground')
   const [residential, setResidential] = useState(false)
+  const [contractDiscount, setContractDiscount] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<UPSRateBreakdown | null>(null)
@@ -45,7 +46,9 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
 
     setLoading(true)
     try {
-      const res = await fetch('/api/pricing/estimate', {
+      const discountPct = contractDiscount ? parseFloat(contractDiscount) / 100 : undefined
+
+    const res = await fetch('/api/pricing/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,6 +58,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
           destinationZip,
           service,
           residential,
+          ...(discountPct !== undefined ? { contractDiscountPct: discountPct } : {}),
         }),
       })
       const data = await res.json() as { breakdown?: UPSRateBreakdown; error?: string }
@@ -192,6 +196,26 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
                   )
                 })}
               </div>
+            </div>
+
+            {/* Contract discount */}
+            <div className="space-y-1.5">
+              <Label htmlFor="discount">Contract Discount % <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <div className="relative w-40">
+                <Input
+                  id="discount"
+                  type="number"
+                  min="0"
+                  max="95"
+                  step="0.1"
+                  placeholder="e.g. 52"
+                  value={contractDiscount}
+                  onChange={e => setContractDiscount(e.target.value)}
+                  className="pr-7"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to see UPS published list rates with no discounts applied.</p>
             </div>
 
             {error && (

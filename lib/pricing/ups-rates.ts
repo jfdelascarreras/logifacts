@@ -27,45 +27,8 @@ export function calcBillableWeight(
   return { billableWeightLbs: actual, billableWeightSource: 'actual' }
 }
 
-// Contract D001207201 Addendum B — service incentive (weight-tiered for Ground)
-function serviceIncentive(service: UPSService, billableWeightLbs: number): number {
-  if (service === 'ground') {
-    if (billableWeightLbs <= 5) return 0.35
-    if (billableWeightLbs <= 10) return 0.38
-    if (billableWeightLbs <= 20) return 0.41
-    if (billableWeightLbs <= 30) return 0.43
-    return 0.45
-  }
-  return 0
-}
-
-// Contract tier incentive (~$19–24K avg weekly spend band)
-const TIER_INCENTIVE: Record<UPSService, number> = {
-  ground: 0.16,
-  '3day': 0.48,
-  '2day': 0.56,
-  nda_saver: 0.57, // estimated — NDA Saver not in original contract spec
-  nda: 0.614,
-}
-
-const PLD_BONUS: Record<UPSService, number> = {
-  ground: 0.05,
-  '3day': 0.10,
-  '2day': 0.10,
-  nda_saver: 0.10,
-  nda: 0.10,
-}
-
 export const FUEL_SURCHARGE_RATE = 0.172 // ~17.2% of net TC, est. 30% off list
 export const RES_SURCHARGE_NET = 2.52    // $6.30 list × 40% net (60% off list)
-
-export function calcDiscounts(service: UPSService, billableWeightLbs: number) {
-  const svcPct = serviceIncentive(service, billableWeightLbs)
-  const tierPct = TIER_INCENTIVE[service]
-  const pldPct = PLD_BONUS[service]
-  const totalPct = Math.min(svcPct + tierPct + pldPct, 0.95)
-  return { svcPct, tierPct, pldPct, totalPct }
-}
 
 type RateIndex = Record<string, Record<string, number>>
 type AllRatesIndex = Record<string, RateIndex>

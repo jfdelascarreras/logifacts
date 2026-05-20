@@ -2,7 +2,6 @@ import type { UPSEstimateInput, UPSEstimateResult } from './types'
 import {
   calcDimWeight,
   calcBillableWeight,
-  calcDiscounts,
   getPublishedRate,
   maxAvailableWeight,
   FUEL_SURCHARGE_RATE,
@@ -47,8 +46,8 @@ export function estimateUPS(input: UPSEstimateInput): UPSEstimateResult {
     }
   }
 
-  const { svcPct, tierPct, pldPct, totalPct } = calcDiscounts(service, billableWeightLbs)
-  const netTransportationCharge = publishedRate * (1 - totalPct)
+  const contractDiscountPct = Math.min(Math.max(input.contractDiscountPct ?? 0, 0), 0.95)
+  const netTransportationCharge = publishedRate * (1 - contractDiscountPct)
   const fuelSurcharge = netTransportationCharge * FUEL_SURCHARGE_RATE
   const residentialSurcharge = residential ? RES_SURCHARGE_NET : 0
   const totalEstimatedCharge = netTransportationCharge + fuelSurcharge + residentialSurcharge
@@ -63,15 +62,11 @@ export function estimateUPS(input: UPSEstimateInput): UPSEstimateResult {
       billableWeightSource,
       zone,
       publishedRate,
-      serviceIncentivePct: svcPct,
-      tierIncentivePct: tierPct,
-      pldBonusPct: pldPct,
-      totalDiscountPct: totalPct,
+      contractDiscountPct,
       netTransportationCharge,
       fuelSurcharge,
       residentialSurcharge,
       totalEstimatedCharge,
-      estimatedContractTerms: service === 'nda_saver',
     },
   }
 }
