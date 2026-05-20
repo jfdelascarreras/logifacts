@@ -2,62 +2,50 @@
  * World Wide Express (WWE) XLS invoice parser.
  *
  * Up to 8 Charge Type / Charge Amount pairs per row — must unpivot before joining.
- * Physical carrier is UPS (SCAC col 7 = 'UPS') but carrier is stored as 'WWE'.
- *
- * Requires: pnpm add exceljs
+ * Physical carrier is UPS (SCAC col 7 = 'UPS') but ingest carrier is WWE.
  */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ExcelJSMod = (() => { try { return require('exceljs') } catch { return null } })()
-import { excelCellAsDisplayString } from '../excel-cell-display'
+import ExcelJS from 'exceljs'
+
+import { identifierLooksScientificNotationCorrupted } from '../identifier-safety'
 import type { ParsedInvoiceLine } from './types'
+import { excelCellRawNum, excelCellStr } from './excel-row'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cellStr(row: any, col: number): string {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  return excelCellAsDisplayString(row.getCell(col + 1))
+const CHARGE_TYPE_COLS = [39, 41, 43, 45, 47, 49, 51, 53] as const
+const CHARGE_AMT_COLS = [40, 42, 44, 46, 48, 50, 52, 54] as const
+
+export type WWEWorksheetParseResult = {
+  lines: ParsedInvoiceLine[]
+  /** Detail rows counted as shipments (same row guards as unpivot; excludes header). */
+  shipmentDetailRows: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cellNum(row: any, col: number): number {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  const v = row.getCell(col + 1).value
-  const n = parseFloat(String(v ?? '').replace(/,/g, '').trim())
-  return isNaN(n) ? 0 : n
-}
-
-// Col indices (0-indexed) per spec
-const CHARGE_TYPE_COLS = [39, 41, 43, 45, 47, 49, 51, 53]
-const CHARGE_AMT_COLS = [40, 42, 44, 46, 48, 50, 52, 54]
-
-export async function parseWWE(buffer: Buffer): Promise<ParsedInvoiceLine[]> {
-  if (!ExcelJSMod) throw new Error('ExcelJS not installed. Run: pnpm add exceljs')
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-  const workbook = new ExcelJSMod.Workbook()
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  await workbook.xlsx.load(buffer)
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-  const ws = workbook.worksheets[0]
-  if (!ws) return []
+export function parseWWEWorksheet(ws: ExcelJS.Worksheet | undefined): WWEWorksheetParseResult {
+  if (!ws) return { lines: [], shipmentDetailRows: 0 }
 
   const results: ParsedInvoiceLine[] = []
+  let shipmentDetailRows = 0
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  ws.eachRow((row: unknown, rowNumber: number) => {
+  ws.eachRow((row: ExcelJS.Row, rowNumber: number) => {
     if (rowNumber === 1) return
 
-    const invoiceNumber = cellStr(row, 1)
-    const shipDate = cellStr(row, 4)
-    const invoiceDate = cellStr(row, 56)
-    const receiverState = cellStr(row, 21)
-    const serviceLevel = cellStr(row, 62)
-    const zone = cellStr(row, 63)
+    const invoiceNumber = excelCellStr(row, 1)
+    const airbill = excelCellStr(row, 3)
+    const shipDate = excelCellStr(row, 4)
+    const invoiceDate = excelCellStr(row, 56)
+    const receiverState = excelCellStr(row, 21)
+    const serviceLevel = excelCellStr(row, 62)
+    const zone = excelCellStr(row, 63)
 
-    if (!invoiceDate && !shipDate) return
+    if ((!invoiceDate || !invoiceDate.trim()) && (!shipDate || !shipDate.trim())) return
+
+    if (identifierLooksScientificNotationCorrupted(invoiceNumber)) return
+
+    /** Package shipments carry UPS tracking numbers in Airbill # (column D); invoice-level rows use refs like `INV…`. */
+    if (/^1Z[A-Z0-9]/i.test(airbill)) shipmentDetailRows += 1
 
     for (let i = 0; i < CHARGE_TYPE_COLS.length; i++) {
-      const chargeType = cellStr(row, CHARGE_TYPE_COLS[i])
-      const chargeAmt = cellNum(row, CHARGE_AMT_COLS[i])
+      const chargeType = excelCellStr(row, CHARGE_TYPE_COLS[i])
+      const chargeAmt = excelCellRawNum(row, CHARGE_AMT_COLS[i])
       if (!chargeType) continue
       results.push({
         charge_description: chargeType,
@@ -72,5 +60,14 @@ export async function parseWWE(buffer: Buffer): Promise<ParsedInvoiceLine[]> {
     }
   })
 
-  return results
+  return { lines: results, shipmentDetailRows }
+}
+
+export async function parseWWE(blob: Uint8Array | ArrayBufferLike): Promise<ParsedInvoiceLine[]> {
+  const workbook = new ExcelJS.Workbook()
+  const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(blob as Uint8Array)
+  // @ts-expect-error — exceljs Buffer type lags Node generics
+  await workbook.xlsx.load(buffer)
+
+  return parseWWEWorksheet(workbook.worksheets[0]).lines
 }

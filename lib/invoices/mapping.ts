@@ -2,11 +2,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Carrier, InvoiceLine, MasterMappingRow } from '@/types/invoice'
 import type { ParsedInvoiceLine } from './parsers/types'
 
-function normalize(value: string | null | undefined): string {
+/** Normalizes charge descriptions for master_mapping lookups (FedEx/WWE/UPS). */
+export function normalizeChargeDescriptionForLookup(value: string | null | undefined): string {
   return String(value ?? '')
     .trim()
     .replace(/\s+/g, ' ')
     .toUpperCase()
+}
+
+function normalize(value: string | null | undefined): string {
+  return normalizeChargeDescriptionForLookup(value)
 }
 
 /** Fetches master_mapping for the given carrier and builds a lookup keyed by normalized charge_description. */

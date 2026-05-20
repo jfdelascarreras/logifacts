@@ -1,13 +1,46 @@
 /**
- * Seed script for the master_mapping table.
+ * ****************************************************************************
+ * OPERATIONAL WARNING — PRODUCTION MUST STAY ALIGNED WITH THE MASTER WORKBOOK *
+ * ****************************************************************************
  *
- * Seeded from the existing charge_description_mappings table (213 UPS rows).
- * carrier defaults to 'UPS' for all rows; standardized_charge left null (populate from Excel).
+ * **`master_mapping` is the single canonical taxonomy table** for this repo.
+ * Premium Analysis, structured invoice lines, and mapping APIs resolve
+ * `(carrier, charge_description)` categories from Postgres — **not** from the
+ * Excel file at runtime. The workbook is authoritative for *changes*; the DB
+ * is authoritative for *serving* lookups after each seed run.
  *
- * Run with:
- *   npx tsx supabase/seed.ts
+ * **Whenever the Master Mapping Excel is updated** (new carriers, new charge
+ * types / descriptions, category moves, standardized_charge changes, etc.),
+ * **`supabase/seed.ts` must be re-run against production** (and staging/local
+ * as applicable) immediately after migrations are satisfied, so analyses do
+ * not drift from finance’s signed-off mapping:
+ *
+ *   pnpm dlx tsx supabase/seed.ts
+ *
+ * Omitting this step causes misclassified or unknown charges / KPIs despite
+ * a correct workbook in git. Full env paths and pitfalls: **`docs/ARCHITECTURE.md`**
+ * (taxonomy + Related commands sections).
+ *
+ * -----------------------------------------------------------------------------
+ * Mechanics (brief)
+ *
+ * Seeds **`master_mapping`** from the consolidated mapping workbook.
+ *
+ * **`MASTER_MAPPING_XLSX`** — explicit path override (optional). Otherwise
+ * tries (first existing):
+ *   - Invoices skills/Master_Mapping_Consolidated_Updated_3.xlsx
+ *   - Invoices skills/Master_Mapping_Consolidated_Updated.xlsx
+ *
+ * **Env:** `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`;
+ * **`SUPABASE_SERVICE_KEY`** (preferred) or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as fallback.
  */
 import { createClient } from '@supabase/supabase-js'
+
+import type { MasterMappingXlsxSeedRow } from '../lib/invoices/excel-master-mapping'
+import {
+  parseMasterMappingXlsxFromFile,
+  resolveDefaultMasterMappingXlsxPaths,
+} from '../lib/invoices/excel-master-mapping'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? ''
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? ''
@@ -19,235 +52,71 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-const ROWS = [
-  { charge_description: '2nd Day Air A.M. Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: '2nd Day Air A.M. Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Hundredweight Third Party', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: '2nd Day Air Other', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Residential', carrier: 'UPS' },
-  { charge_description: '2nd Day Air Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Residential', carrier: 'UPS' },
-  { charge_description: '3 Day Select Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: '3 Day Commercial', carrier: 'UPS' },
-  { charge_description: '3 Day Select Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: '3 Day Commercial', carrier: 'UPS' },
-  { charge_description: '3 Day Select Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: '3 Day Commercial', carrier: 'UPS' },
-  { charge_description: '3 Day Select Hundredweight', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: '3Day Hundredweight', carrier: 'UPS' },
-  { charge_description: '3 Day Select Hundredweight Third Party', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: '3Day Hundredweight', carrier: 'UPS' },
-  { charge_description: '3 Day Select Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: '3 Day Residential', carrier: 'UPS' },
-  { charge_description: '3 Day Select Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: '3 Day Residential', carrier: 'UPS' },
-  { charge_description: '3 Day Select Undeliverable Return', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '3 Day Select', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Additional Handling', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Additional Handling', carrier: 'UPS' },
-  { charge_description: 'Additional Handling - Length+Girth', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Additional Handling', carrier: 'UPS' },
-  { charge_description: 'Addl. Handling longest side', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Additional Handling', carrier: 'UPS' },
-  { charge_description: 'Addl. Handling weight', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Additional Handling', carrier: 'UPS' },
-  { charge_description: 'Address Correction', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Address Errors', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction 2nd Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction 3 Day Select', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '3 Day Select', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Other Admin', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction Ground', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction Next Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction Next Day Air Early', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Address Correction Next Day Air Saver', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Adult Signature Required', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Miscellaneous', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Address Correction', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 01/03/2026', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 01/10/2026', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 01/17/2026', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 06/07/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 06/14/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 06/21/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 06/28/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 07/19/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 07/26/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 08/09/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 08/16/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 08/23/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 08/30/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 09/06/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 09/13/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 09/20/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 09/27/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 10/04/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 10/11/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 10/18/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 10/25/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 11/08/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 11/15/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 11/22/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 11/29/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 12/06/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 12/13/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 12/20/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Billing Adjustment for  W/E 12/27/2025', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Billing Adjustment', carrier: 'UPS' },
-  { charge_description: 'Chargeback Addl. Handling weight', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Other/Unclassified', carrier: 'UPS' },
-  { charge_description: 'Chargeback Chargeback Surcharge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other/Unclassified', carrier: 'UPS' },
-  { charge_description: 'Chargeback Delivery Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'Other/Unclassified', carrier: 'UPS' },
-  { charge_description: 'Chargeback Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Fuel Surcharge', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Other/Unclassified', carrier: 'UPS' },
-  { charge_description: 'Chargeback Ground Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Other/Unclassified', carrier: 'UPS' },
-  { charge_description: 'Commercial Adjustment', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Declared Value', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Delivery Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'DAS', carrier: 'UPS' },
-  { charge_description: 'Delivery Area Surcharge - Extended', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'DAS', carrier: 'UPS' },
-  { charge_description: 'Delivery Area Surcharge - Extended Adjustment', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'DAS', carrier: 'UPS' },
-  { charge_description: 'Delivery Area Surcharge Adjustment', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'DAS', carrier: 'UPS' },
-  { charge_description: 'Delivery Confirmation Signature', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Miscellaneous', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Delivery Confirmation', carrier: 'UPS' },
-  { charge_description: 'Delivery Confirmation Signature - Commercial', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Miscellaneous', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Delivery Confirmation', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge - Commercial', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Peak/Demand', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge - Commercial Adjustment', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge - Residential', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge - Residential Adjustment', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge Addl Handling', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge Large Package', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Peak/Demand', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Demand Surcharge-Addl Handling', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Handling', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Direct Delivery Only', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Duty and Tax Forwarding Surcharge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Early Surcharge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Fuel Surcharge', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Fuel Surcharge Adjustment', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Other Admin', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Future Day Pickup - Alternate Address - Phone Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial UPS Delivery Intercept', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial UPS Delivery Intercept Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Commercial UPS Delivery Intercept Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Commercial', carrier: 'UPS' },
-  { charge_description: 'Ground Hundredweight', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: 'Ground Hundredweight', carrier: 'UPS' },
-  { charge_description: 'Ground Hundredweight Third Party', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: 'Ground Hundredweight', carrier: 'UPS' },
-  { charge_description: 'Ground Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Residential', carrier: 'UPS' },
-  { charge_description: 'Ground Residential Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Residential', carrier: 'UPS' },
-  { charge_description: 'Ground Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Residential', carrier: 'UPS' },
-  { charge_description: 'Ground Return to Sender', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Ground Return to Sender Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Ground Shipment Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Ground Other', carrier: 'UPS' },
-  { charge_description: 'Ground Undeliverable Return', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'GSR Delivery Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Demand Surcharge - Commercial', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Peak/Demand', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Early Surcharge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Next Day Air Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Next Day Air Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Next Day Air Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Next Day Air Early Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Next Day Air Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Residential Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Accessorials', category_4: 'Residential', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Shipping Charge Correction', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'GSR Zone Adjustment', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'GSR', carrier: 'UPS' },
-  { charge_description: 'Large Package Surcharge - Length + Girth', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Large Package', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Large Package', carrier: 'UPS' },
-  { charge_description: 'Large Package Surcharge Comm - Length', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Large Package', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Large Package', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Early Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Early Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Early Commercial Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Early Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Early Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Early Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Early Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Early Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Early Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Early Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Hundredweight Third Party', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: 'Next Day Air Early Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Residential Collect', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Saver Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Saver Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Saver Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Saver Commercial', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Saver Hundredweight Third Party', transportation_mode: 'LTL', category_1: 'Base Freight', category_2: 'LTL / Hundredweight', category_3: 'LTL Freight', category_4: 'LTL (Hundredweight)', category_5: 'Next Day Air Saver Hundredweight', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Saver Residential', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Saver Residential', carrier: 'UPS' },
-  { charge_description: 'Next Day Air Saver Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Next Day Air Saver Residential', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed 2nd Day Air A.M. Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: '2nd Day Air Commercial', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Canada Residential Surcharge', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'International', category_3: 'Accessorials', category_4: 'Residential', category_5: 'International', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Fuel Surcharge', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Fuel', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Missing PLD Fee', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Surge Fee - Com', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Peak/Demand', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Surge Fee - Resi', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Residential Surcharge', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Not Previously Billed Third Party Billing Service', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Paper Commercial Invoice Surcharge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Payment Processing Fee', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Remote Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Other / Penalties', category_4: 'Delivery Area', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Reroute - Phone Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Address Errors', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Reroute - Web Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Address Errors', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Reschedule Delivery - Web Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Residential Adjustment', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Residential Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Residential Surcharge Adjustment', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Return To Sender - Phone Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Returns', category_3: 'Other / Penalties', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Return To Sender - Web Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Returns', category_3: 'Other / Penalties', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns 2nd Day Air', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Returns 3 UPS Pickup Attempts', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Returns', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Delivery Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Delivery Area Surcharge - Extended', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Demand Surcharge - Residential', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Electronic Label', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Returns', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Fuel Surcharge', category_3: 'Fuel Surcharge', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Ground', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Next Day Air', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Print Label', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Returns', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Returns Residential Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Returns', carrier: 'UPS' },
-  { charge_description: 'Same Day Pickup - Alternate Address - Web Request', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Saturday Delivery', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Service Charge', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Adjustments', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction 2nd Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction 2nd Day Air A.M.', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction 3 Day Select', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '3 Day Select', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction 3 Day Select Undeliverable Return', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '3 Day Select', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Additional Handling', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Additional Handling - Length+Girth', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Addl. Handling longest side', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Addl. Handling second long. Side', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Addl. Handling weight', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Demand Surcharge Addl Handling', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Demand Surcharge Large Package', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Other Admin', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Ground', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Ground Commercial UPS Delivery Intercept Collect', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Ground Return to Sender', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Ground Same Day Pickup- Document', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Ground Undeliverable Return', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Returns', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Large Package Surcharge - Length + Girth', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Other / Penalties', category_4: 'Handling & Size', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Next Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Next Day Air Early', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Next Day Air Saver', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Shipping Charge Correction Third Party Billing Service', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Adjustments', category_5: 'Correction', carrier: 'UPS' },
-  { charge_description: 'Standard Shipment', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Other Unclassified', category_5: 'National', carrier: 'UPS' },
-  { charge_description: 'Standard to Canada', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'International', carrier: 'UPS' },
-  { charge_description: 'Surge Fee - Com', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Peak/Demand', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Surge Fee - Resi', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Residential Surcharge', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Other', carrier: 'UPS' },
-  { charge_description: 'Third Party Billing Service', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: '3rd Party', carrier: 'UPS' },
-  { charge_description: 'Third Party Billing Service Adjustment', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: '3rd Party', carrier: 'UPS' },
-  { charge_description: 'UPS carbon neutral', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Carbon Neutral', carrier: 'UPS' },
-  { charge_description: 'Void Declared Value', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Miscellaneous', category_3: 'Other / Penalties', category_4: 'Other Unclassified', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Delivery Area Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Area Surcharge', category_3: 'Accessorials', category_4: 'Delivery Area', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Demand Surcharge - Residential', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Fuel Surcharge', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Ground Commercial', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Ground Commercial Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Ground Residential Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'Base Freight', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Residential Surcharge', transportation_mode: 'Other', category_1: 'Accessorial Surcharge', category_2: 'Residential Surcharge', category_3: 'Accessorials', category_4: 'Residential', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Void Third Party Billing Service', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Void', carrier: 'UPS' },
-  { charge_description: 'Worldwide Expedited', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'Worldwide', carrier: 'UPS' },
-  { charge_description: 'Worldwide Expedited Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'Worldwide', carrier: 'UPS' },
-  { charge_description: 'Worldwide Express Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'Worldwide', carrier: 'UPS' },
-  { charge_description: 'Worldwide Saver', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'Worldwide', carrier: 'UPS' },
-  { charge_description: 'Worldwide Saver Shipment Third Party', transportation_mode: 'Parcel', category_1: 'Base Freight', category_2: 'International', category_3: 'Base Freight', category_4: 'International', category_5: 'Worldwide', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT 2nd Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '2nd Day Air', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT 3 Day Select', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: '3 Day Select', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Fuel Surcharge', transportation_mode: 'Other', category_1: 'Fuel Surcharge', category_2: 'Other Admin', category_3: 'Fuel Surcharge', category_4: 'Fuel Surcharge', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Ground', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Ground', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Next Day Air', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Next Day Air Early', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Next Day Air Saver', transportation_mode: 'Other', category_1: 'Base Freight', category_2: 'Other Admin', category_3: 'Base Freight', category_4: 'Next Day Air', category_5: 'Zone Adjustment', carrier: 'UPS' },
-  { charge_description: 'ZONE ADJUSTMENT Third Party Billing Service', transportation_mode: 'Other', category_1: 'Other / Penalties', category_2: 'Other Admin', category_3: 'Accessorials', category_4: 'Other Unclassified', category_5: 'Zone Adjustment', carrier: 'UPS' },
-] as const
+const UPSERT_COLUMNS = ['carrier', 'charge_description'] as const
+const UPSERT_COLUMNS_STR = UPSERT_COLUMNS.join(',')
+
+/** Supabase rejects oversized batches for wide rows safely under this cap. */
+const CHUNK_SIZE = 200
+
+function chunk<T>(xs: readonly T[]): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < xs.length; i += CHUNK_SIZE) out.push(xs.slice(i, i + CHUNK_SIZE))
+  return out
+}
+
+function upsertPayload(rows: MasterMappingXlsxSeedRow[]) {
+  return rows.map((r) => ({
+    carrier: r.carrier,
+    charge_description: r.charge_description,
+    transportation_mode: r.transportation_mode,
+    category_1: r.category_1,
+    category_2: r.category_2,
+    category_3: r.category_3,
+    category_4: r.category_4,
+    category_5: r.category_5,
+    standardized_charge: r.standardized_charge,
+  }))
+}
 
 async function seed() {
-  console.log(`Seeding ${ROWS.length} rows into master_mapping...`)
-
-  const { error } = await supabase
-    .from('master_mapping')
-    .upsert(
-      ROWS.map((r) => ({ ...r, standardized_charge: null })),
-      { onConflict: 'carrier,charge_description', ignoreDuplicates: false }
+  const paths = await resolveDefaultMasterMappingXlsxPaths()
+  if (!paths.length) {
+    console.error(
+      'No workbook found. Drop Master_Mapping_Consolidated_Updated*.xlsx under `Invoices skills/` or set MASTER_MAPPING_XLSX.'
     )
-
-  if (error) {
-    console.error('Seed failed:', error.message)
     process.exit(1)
+  }
+
+  const xlsxPath = paths[0]!
+  console.log(`Reading master mapping workbook: ${xlsxPath}`)
+  let rows: MasterMappingXlsxSeedRow[]
+  try {
+    rows = await parseMasterMappingXlsxFromFile(xlsxPath)
+  } catch (e) {
+    console.error('Failed to parse workbook:', e)
+    process.exit(1)
+  }
+
+  if (!rows.length) {
+    console.error('Workbook parsed zero taxonomy rows.')
+    process.exit(1)
+  }
+
+  console.log(`Upserting ${rows.length} rows into master_mapping...`)
+
+  const payload = upsertPayload(rows)
+
+  for (const slice of chunk(payload)) {
+    const { error: masterErr } = await supabase
+      .from('master_mapping')
+      .upsert(slice, {
+        onConflict: UPSERT_COLUMNS_STR,
+        ignoreDuplicates: false,
+      })
+    if (masterErr) {
+      console.error('master_mapping upsert failed:', masterErr.message)
+      process.exit(1)
+    }
   }
 
   console.log('Seed complete.')

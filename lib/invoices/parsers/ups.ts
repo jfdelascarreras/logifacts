@@ -1,18 +1,8 @@
 import { identifierLooksScientificNotationCorrupted } from '../identifier-safety'
 import { INVOICE_HEADERS } from '../headers'
 import { splitCsvLine } from '../csv'
+import { cleanText, toNum } from './scalars'
 import type { ParsedInvoiceLine } from './types'
-
-function toNum(v: string | null | undefined): number {
-  const n = parseFloat(String(v ?? '').replace(/,/g, '').trim())
-  return isNaN(n) ? 0 : n
-}
-
-/** Strip null bytes and other control characters Postgres rejects in text columns. */
-function clean(v: string | null | undefined): string {
-  // eslint-disable-next-line no-control-regex
-  return String(v ?? '').replace(/\u0000/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '').trim()
-}
 
 function col(name: (typeof INVOICE_HEADERS)[number]): number {
   return INVOICE_HEADERS.indexOf(name)
@@ -47,28 +37,28 @@ export function parseUPS(buffer: Buffer): ParsedInvoiceLine[] {
     const cols = splitCsvLine(line)
     if (cols.length < 50) continue
 
-    const invoiceDate = clean(cols[invoiceDateCol])
+    const invoiceDate = cleanText(cols[invoiceDateCol])
     if (!invoiceDate || invoiceDate === 'Invoice Date') continue
 
-    const chargeDesc = clean(cols[chargeDescCol])
+    const chargeDesc = cleanText(cols[chargeDescCol])
     if (!chargeDesc) continue
 
     const netAmount    = toNum(cols[netAmountCol])
-    const shipmentDate = clean(cols[transactionDateCol]) || undefined
-    const zone         = clean(cols[zoneCol]) || undefined
-    const destState    = clean(cols[receiverStateCol]) || undefined
-    const serviceLevel = clean(cols[origServiceCol]) || undefined
-    const ref1         = clean(cols[ref1Col]) || undefined
-    const invoiceNumber = clean(cols[invoiceNumberCol]) || undefined
-    const accountNumber = clean(cols[accountNumberCol]) || undefined
+    const shipmentDate = cleanText(cols[transactionDateCol]) || undefined
+    const zone         = cleanText(cols[zoneCol]) || undefined
+    const destState    = cleanText(cols[receiverStateCol]) || undefined
+    const serviceLevel = cleanText(cols[origServiceCol]) || undefined
+    const ref1         = cleanText(cols[ref1Col]) || undefined
+    const invoiceNumber = cleanText(cols[invoiceNumberCol]) || undefined
+    const accountNumber = cleanText(cols[accountNumberCol]) || undefined
     if (
       identifierLooksScientificNotationCorrupted(invoiceNumber ?? '') ||
       identifierLooksScientificNotationCorrupted(accountNumber ?? '')
     ) {
       continue
     }
-    const chargeClassificationCode = clean(cols[classCodeCol]).toUpperCase() || undefined
-    const chargeCategoryCode       = clean(cols[catCodeCol]).toUpperCase() || undefined
+    const chargeClassificationCode = cleanText(cols[classCodeCol]).toUpperCase() || undefined
+    const chargeCategoryCode       = cleanText(cols[catCodeCol]).toUpperCase() || undefined
     const packageQuantity          = toNum(cols[packageQtyCol]) || undefined
 
     results.push({

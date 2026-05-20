@@ -3,59 +3,60 @@
  *
  * Two charge sources per row:
  *  1. Service Type (col 11) → base freight row (Transportation Charge Amount, col 9)
- *  2. Up to 25 Tracking ID Charge Description / Amount pairs (cols 105+, every other col)
- *
- * Requires: pnpm add exceljs
+ *  2. Up to 25 Tracking ID Charge Description / Amount pairs — anchored from the first header column
+ *     titled “Tracking ID Charge Description” (fallback zero-based column 107).
  */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ExcelJSMod = (() => { try { return require('exceljs') } catch { return null } })()
-import { excelCellAsDisplayString } from '../excel-cell-display'
+import ExcelJS from 'exceljs'
+
+import { identifierLooksScientificNotationCorrupted } from '../identifier-safety'
 import type { ParsedInvoiceLine } from './types'
+import { excelCellRawNum, excelCellStr } from './excel-row'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cellStr(row: any, col: number): string {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  return excelCellAsDisplayString(row.getCell(col + 1))
+const TRACKING_CHARGE_DESC_HEADER_RE = /tracking\s*id\s*charge\s*description/i
+
+/** Header-driven anchor so Tendered Date / MPS Package ID columns before the first pair stay unparsed. */
+function fedExTrackingChargeDescStartColumn(ws: ExcelJS.Worksheet): number {
+  const headerRow = ws.getRow(1)
+  const scanEnd = Math.min(ws.columnCount ?? 220, 240)
+  for (let c = 70; c < scanEnd; c++) {
+    if (TRACKING_CHARGE_DESC_HEADER_RE.test(excelCellStr(headerRow, c))) return c
+  }
+  return 107
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cellNum(row: any, col: number): number {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  const v = row.getCell(col + 1).value
-  const n = parseFloat(String(v ?? '').replace(/,/g, '').trim())
-  return isNaN(n) ? 0 : n
+export type FedExParseOptions = {
+  /** When true, only Tracking ID charge pairs are emitted (no base freight row). */
+  unpivotChargesOnly?: boolean
 }
 
-export async function parseFedEx(buffer: Buffer): Promise<ParsedInvoiceLine[]> {
-  if (!ExcelJSMod) throw new Error('ExcelJS not installed. Run: pnpm add exceljs')
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-  const workbook = new ExcelJSMod.Workbook()
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  await workbook.xlsx.load(buffer)
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-  const ws = workbook.worksheets[0]
+export function parseFedExWorksheet(
+  ws: ExcelJS.Worksheet | undefined,
+  options?: FedExParseOptions
+): ParsedInvoiceLine[] {
   if (!ws) return []
 
+  const unpivotOnly = Boolean(options?.unpivotChargesOnly)
+  const trackingPairDescStart = fedExTrackingChargeDescStartColumn(ws)
   const results: ParsedInvoiceLine[] = []
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  ws.eachRow((row: unknown, rowNumber: number) => {
+  ws.eachRow((row: ExcelJS.Row, rowNumber: number) => {
     if (rowNumber === 1) return
 
-    const invoiceDate = cellStr(row, 1)
-    const invoiceNumber = cellStr(row, 2)
-    const netChargeAmount = cellNum(row, 10)
-    const serviceType = cellStr(row, 11)
-    const shipmentDate = cellStr(row, 13)
-    const recipientState = cellStr(row, 37)
-    const zoneCode = cellStr(row, 63)
-    const transportationChargeAmount = cellNum(row, 9)
+    const invoiceDate = excelCellStr(row, 1)
+    const invoiceNumber = excelCellStr(row, 2)
+    const netChargeAmount = excelCellRawNum(row, 10)
+    const serviceType = excelCellStr(row, 11)
+    const shipmentDate = excelCellStr(row, 13)
+    const recipientState = excelCellStr(row, 37)
+    const zoneCode = excelCellStr(row, 63)
+    const transportationChargeAmount = excelCellRawNum(row, 9)
 
-    if (!invoiceDate || !serviceType) return
+    if (!invoiceDate || !invoiceDate.trim()) return
+    if (/^invoice\b/i.test(invoiceDate) || /^date\b/i.test(invoiceDate)) return
 
-    // Base freight row from Service Type
-    if (serviceType) {
+    if (identifierLooksScientificNotationCorrupted(invoiceNumber)) return
+
+    if (!unpivotOnly && serviceType) {
       results.push({
         charge_description: serviceType,
         charge_amount: transportationChargeAmount || netChargeAmount,
@@ -68,13 +69,12 @@ export async function parseFedEx(buffer: Buffer): Promise<ParsedInvoiceLine[]> {
       })
     }
 
-    // Unpivot accessorial charge pairs (cols 105–154, 0-indexed: desc at 105,107,109... amount at 106,108,110...)
     for (let i = 0; i < 25; i++) {
-      const descCol = 105 + i * 2
-      const amtCol = 106 + i * 2
-      const desc = cellStr(row, descCol)
-      const amt = cellNum(row, amtCol)
-      if (!desc) break
+      const descCol = trackingPairDescStart + i * 2
+      const amtCol = trackingPairDescStart + 1 + i * 2
+      const desc = excelCellStr(row, descCol)
+      const amt = excelCellRawNum(row, amtCol)
+      if (!desc) continue
       results.push({
         charge_description: desc,
         charge_amount: amt,
@@ -89,4 +89,16 @@ export async function parseFedEx(buffer: Buffer): Promise<ParsedInvoiceLine[]> {
   })
 
   return results
+}
+
+export async function parseFedEx(
+  blob: Uint8Array | ArrayBufferLike,
+  options?: FedExParseOptions
+): Promise<ParsedInvoiceLine[]> {
+  const workbook = new ExcelJS.Workbook()
+  const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(blob as Uint8Array)
+  // @ts-expect-error — exceljs Buffer type lags Node generics
+  await workbook.xlsx.load(buffer)
+
+  return parseFedExWorksheet(workbook.worksheets[0], options)
 }
