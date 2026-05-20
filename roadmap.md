@@ -8,19 +8,19 @@ Milestones are implemented sequentially via `/implement [N]`. Each entry is the 
 
 **Status:** not implemented
 **Area:** pricing
-**Goal:** Port the Club Colors UPS quoting tool (Contract D001207201, Addendum B, Hoffman Estates IL origin) into the app as a standalone `/pricing` page with ZIP-to-zone lookup, DIM weight calculation, stacked contract discounts, and a full per-shipment cost breakdown.
+**Goal:** Port the Club Colors UPS quoting tool (Contract D001207201, Addendum B) into the app as a standalone `/pricing` page — origin ZIP comes from the authenticated user's profile, destination ZIP drives zone lookup, and the result shows DIM weight, stacked contract discounts, and a full per-shipment cost breakdown.
 
 **Touches:**
 - `lib/pricing/ups-rates.ts` — rate tables (Ground, Ground Saver, 3-Day, 2nd Day Air, NDA; zones 2–8; weight breakpoints 1–150 lbs) and discount schedule (service incentive, tier incentive, PLD bonus)
-- `lib/pricing/ups-zone-lookup.ts` — resolves destination ZIP (3-digit prefix) → zone integer using a static zone chart
-- `lib/pricing/data/ups-zone-chart.json` — UPS zone chart for Hoffman Estates origin (3-digit ZIP prefix → zone 2–8); **must be sourced from UPS before this milestone can be implemented**
+- `lib/pricing/ups-zone-lookup.ts` — resolves `(origin3, dest3) → zone` using a static national zone table
+- `lib/pricing/data/ups-zones.json` — UPS national zone table keyed by `"ORIGIN3_DEST3"` → zone 2–8; **must be sourced before implementation** (see data dependency note below)
 - `lib/pricing/ups-estimate.ts` — pure `estimateUPS(input): UPSRateResult` function; no I/O
 - `lib/pricing/ups-estimate.test.ts` — unit tests covering DIM governs, actual governs, residential, each service, zone boundary, weight interpolation
 - `lib/pricing/index.ts` — barrel export
-- `app/api/pricing/estimate/route.ts` — `POST /api/pricing/estimate`; validates input, calls `estimateUPS`, returns result; auth-gated
-- `app/components/pricing/ups-quote-form.tsx` — form: actual weight, dimensions (L×W×H), origin ZIP (prefilled Hoffman Estates), destination ZIP, service selector, delivery type toggle
+- `app/api/pricing/estimate/route.ts` — `POST /api/pricing/estimate`; reads `user_metadata.origin_zip`, validates input, calls `estimateUPS`, returns result; auth-gated
+- `app/components/pricing/ups-quote-form.tsx` — form: actual weight, dimensions (L×W×H), origin ZIP (prefilled from `user_metadata.origin_zip`), destination ZIP, service selector, delivery type toggle
 - `app/components/pricing/rate-result.tsx` — result card: net cost hero, billable weight badge, discount chips (service/tier/PLD), cost breakdown table (list → incentives → net TC → fuel → residential → total), accessorial reference rates
-- `app/pricing/page.tsx` — standalone `/pricing` route; Server Component; wires form + result
+- `app/pricing/page.tsx` — standalone `/pricing` route; Server Component; reads `user_metadata.origin_zip`, passes to form as default
 
 **Calculation spec (from Contract D001207201 Addendum B):**
 
@@ -50,11 +50,13 @@ Milestones are implemented sequentially via `/implement [N]`. Each entry is the 
 | Declared Value | 41.18% off list |
 
 **Notes / constraints:**
-- **ZIP-to-zone data dependency:** `lib/pricing/data/ups-zone-chart.json` must be created from the UPS zone chart for origin ZIP 60169 (Hoffman Estates, IL) before implementation. UPS publishes zone charts per origin at ups.com/zone-advisor. File shape: `{ "606": 2, "606": 3, ... }` keyed by 3-digit destination ZIP prefix.
+- **Origin ZIP from user profile:** `user_metadata.origin_zip` is the shipping origin for the authenticated user. Same pattern as `user_metadata.company_name`. The form prefills from this value; users can override per-query but the stored value is the default.
+- **Zone lookup data dependency:** `lib/pricing/data/ups-zones.json` must be built before implementation. UPS publishes zone charts per origin 3-digit prefix at ups.com/zone-advisor. The full national table shape is `{ "606_900": 5, "606_100": 3, ... }` keyed by `"ORIGIN3_DEST3"`. Alternatively, source a pre-compiled national zone CSV (e.g. from a UPS developer resource or third-party dataset) and convert to JSON.
+- **Zone fallback:** If a destination ZIP prefix has no entry for the user's origin, return a clear error (`"Zone not found for this origin/destination combination"`) — do not silently default.
 - All displayed costs must be labeled **"Estimate"** — actual invoice charges vary (weekly fuel rate, quarterly rebate not included).
 - Quarterly rebate (3%) is intentionally excluded from per-shipment calculation.
 - Stateless — no data persisted per query.
 - Auth-gated: `/pricing` redirects unauthenticated users to login.
-- `lib/pricing/` must remain pure (no Supabase, no HTTP, no side effects).
+- `lib/pricing/` must remain pure (no Supabase, no HTTP, no side effects). Origin ZIP is passed in as a function argument, not read from a session inside lib.
 - Rate logic must be fully tested before the API route is wired up.
 - FedEx and WWE pricing are deferred to future milestones.
