@@ -4,8 +4,9 @@
 supabase/.temp/
 supabase/.seed-sql-chunks/
 
-# Generated script artifacts (dot-prefixed outputs in scripts/)
+# Generated script artifacts (dot- and underscore-prefixed outputs in scripts/)
 scripts/.*
+scripts/_*
 .mapping-rows-export.json
 
 # Personal / non-project files
