@@ -5,12 +5,78 @@ export { INVOICE_HEADERS }
 
 export type InvoiceRecord = Record<(typeof INVOICE_HEADERS)[number], string | null>
 
-/** Aligns with Power Query steps 7 + 9 (Club Colors): drop embedded headers only. */
+/**
+ * Mirrors `invoiceCarrierPremiumKey` in analysis-summary (avoid circular imports).
+ * Blank carrier defaults to UPS — matches mapping resolution behavior.
+ */
+function premiumCarrierKeyFromRecord(rec: InvoiceRecord): 'UPS' | 'FEDEX' | 'WWE' | string {
+  const k = String(rec['Carrier Name'] ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase()
+  const norm = k === '' ? 'UPS' : k
+  if (norm === 'UPS') return 'UPS'
+  if (norm.includes('FED')) return 'FEDEX'
+  if (norm.includes('WORLD') || norm === 'WWE' || norm.includes('WWE')) return 'WWE'
+  return norm
+}
+
+/** True when the cell is empty or repeats its column header (embedded CSV header row). */
+function hasRealDateValue(column: keyof InvoiceRecord, rec: InvoiceRecord): boolean {
+  const headerLabel = column as string
+  const v = String(rec[column] ?? '').trim()
+  return v !== '' && v !== headerLabel
+}
+
+/** UPS Club Colors Power Query: Invoice Date must be populated and not a header echo. */
+function passesUpsClubColorsDateGate(rec: InvoiceRecord): boolean {
+  return hasRealDateValue('Invoice Date', rec)
+}
+
+/**
+ * FedEx/WWE layouts and some consolidated exports often bill by Transaction / Shipment date
+ * while leaving Invoice Date blank — still valid detail rows in the same 250-column shape.
+ */
+const NON_UPS_DATE_COLUMNS: (keyof InvoiceRecord)[] = [
+  'Invoice Date',
+  'Transaction Date',
+  'Shipment Date',
+]
+
+function passesNonUpsClubColorsDateGate(rec: InvoiceRecord): boolean {
+  return NON_UPS_DATE_COLUMNS.some((col) => hasRealDateValue(col, rec))
+}
+
+/**
+ * Raw date cell for Premium Analysis rollups and dashboard date filters.
+ * FedEx/WWE: first non-empty among Invoice Date → Transaction Date → Shipment Date (excluding header echoes).
+ * UPS and other carriers: Invoice Date only (Club Colors).
+ */
+export function primaryRollupDateRaw(rec: InvoiceRecord): string | null {
+  const carrier = premiumCarrierKeyFromRecord(rec)
+  if (carrier === 'FEDEX' || carrier === 'WWE') {
+    for (const col of NON_UPS_DATE_COLUMNS) {
+      if (hasRealDateValue(col, rec)) return String(rec[col] ?? '').trim()
+    }
+    return null
+  }
+  if (!hasRealDateValue('Invoice Date', rec)) return null
+  return String(rec['Invoice Date'] ?? '').trim()
+}
+
+/**
+ * Aligns with Power Query steps 7 + 9 (Club Colors): drop embedded headers / spacer rows.
+ * UPS: requires **Invoice Date** (Club Colors behavior).
+ * FedEx / WWE: keep rows when **any** of Invoice Date, Transaction Date, or Shipment Date
+ * carries a real value (non-empty and not a repeated header label).
+ */
 export function filterRowsLikeClubColorsPowerQuery(records: InvoiceRecord[]): InvoiceRecord[] {
   return records.filter((rec) => {
-    const invoiceDate = (rec['Invoice Date'] ?? '').trim()
-    if (invoiceDate === 'Invoice Date' || invoiceDate === '') return false
-    return true
+    const carrier = premiumCarrierKeyFromRecord(rec)
+    if (carrier === 'FEDEX' || carrier === 'WWE') {
+      return passesNonUpsClubColorsDateGate(rec)
+    }
+    return passesUpsClubColorsDateGate(rec)
   })
 }
 

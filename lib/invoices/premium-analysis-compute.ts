@@ -63,11 +63,24 @@ export async function computePremiumInvoiceAnalysis(
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(200),
-    supabase
-      .from('charge_description_mappings')
-      .select(
-        'charge_description, transportation_mode, category_1, category_2, category_3, category_4, category_5'
-      ),
+    /*
+     * TODO (`standardized_charge` — cross-carrier grouping + dashboard filters)
+     *
+     * This query already returns **`standardized_charge`** from **`master_mapping`** (canonical taxonomy, same grain as
+     * multipart ingest). That column maps vendor-specific **`charge_description`** text to finance’s **shared label**
+     * for multicarrier rollups (`standardized_charge` is the normalization key analysts expect when stacking FedEx /
+     * UPS / WWE buckets).
+     *
+     * It is **not yet** consumed downstream: **`buildChargeDescriptionLookup`** trims it off before **`ChargeTaxonomyValue`**,
+     * so **`computeInvoiceAnalysisSummary`** and the dashboard cannot filter or group by standardized label. When
+     * promoting it: thread the field through the lookup payload and summary engine (see **`buildChargeDescriptionLookup`**
+     * TODO in **`analysis-summary.ts`**), regenerate filter metadata distincts, persist any new slices on saved analysis JSON,
+     * and ship UI filters + charts keyed by **`standardized_charge`** alongside existing carrier/category breakdowns.
+     */
+    /* Canonical taxonomy — same rows used by multipart ingest (`mapInvoiceLines`). */
+    supabase.from('master_mapping').select(
+      'carrier, standardized_charge, charge_description, transportation_mode, category_1, category_2, category_3, category_4, category_5'
+    ),
   ])
 
   if (uploadError) {

@@ -175,6 +175,35 @@ describe('computeInvoiceAnalysisSummary (synthetic golden)', () => {
     expect(summary.spendByInvoice[0]?.costSurcharges).toBeCloseTo(10.5, 6)
   })
 
+  it('FedEx: rolls up daily/monthly spend using Transaction Date when Invoice Date is empty', () => {
+    const lookup = buildChargeDescriptionLookup([baseMappingFreight])
+    const row = invoiceRow({
+      'Carrier Name': 'FedEx',
+      'Invoice Date': '',
+      'Transaction Date': '2025-06-01',
+      'Shipment Date': '',
+      'Account Number': 'FX1',
+      'Invoice Number': 'INVFX',
+      'Tracking Number': 'TRKFX',
+      'Package Quantity': '1',
+      'Billed Weight': '1',
+      'Entered Weight': '1',
+      'Zone': '51',
+      'Net Amount': '50',
+      'Invoice Amount': '50',
+      'Duty Amount': '0',
+      'Original Service Description': 'Ground',
+      'Charge Category Code': 'IMP',
+      'Charge Classification Code': 'SHP',
+      'Charge Description': 'Ground',
+    })
+    const summary = computeInvoiceAnalysisSummary([row], lookup)
+    expect(summary.dailySpend.map((d) => d.date)).toContain('2025-06-01')
+    const june = summary.monthlySpend.find((m) => m.month.includes('June') && m.month.includes('2025'))
+    expect(june?.totalCost).toBeCloseTo(50, 6)
+    expect(summary.dailySpendByAccount.some((r) => r.date === '2025-06-01')).toBe(true)
+  })
+
   it('aggregates spendByInvoice by invoice number only when account numbers differ', () => {
     const lookup = buildChargeDescriptionLookup([baseMappingFreight])
     const base = {
@@ -301,6 +330,42 @@ describe('filterInvoiceRecords + filter meta', () => {
     expect(meta.accountNumbers).toEqual(['A1', 'Z9'])
   })
 
+  it('FedEx: filter meta uses Transaction Date when Invoice Date is empty', () => {
+    const meta = buildInvoiceAnalysisFilterMeta([
+      invoiceRow({
+        'Carrier Name': 'FedEx',
+        'Invoice Date': '',
+        'Transaction Date': '2025-09-15',
+        'Account Number': 'Z9',
+      }),
+    ])
+    expect(meta.years).toEqual([2025])
+    expect(meta.yearMonths).toContain('2025-09')
+  })
+
+  it('FedEx: year filter matches Transaction Date when Invoice Date is empty', () => {
+    const rec = invoiceRow({
+      'Carrier Name': 'FedEx',
+      'Invoice Date': '',
+      'Transaction Date': '2025-08-01',
+      'Invoice Number': '1',
+      'Account Number': 'A',
+    })
+    expect(filterInvoiceRecords([rec], { year: 2025 })).toHaveLength(1)
+    expect(filterInvoiceRecords([rec], { year: 2024 })).toHaveLength(0)
+  })
+
+  it('UPS: year filter does not use Transaction Date when Invoice Date is empty', () => {
+    const rec = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '',
+      'Transaction Date': '2025-08-01',
+      'Invoice Number': '1',
+      'Account Number': 'A',
+    })
+    expect(filterInvoiceRecords([rec], { year: 2025 })).toHaveLength(0)
+  })
+
   it('normalizeInvoiceAnalysisFilters parses POST-shaped payloads', () => {
     expect(normalizeInvoiceAnalysisFilters({ yearMonth: '2026-03', accountNumber: '  X1 ' })).toEqual({
       yearMonth: '2026-03',
@@ -354,5 +419,47 @@ describe('parse → filter → profile sender (pipeline smoke)', () => {
     expect(withSender).toHaveLength(1)
     expect(withSender[0]?.['Sender Company Name']).toBe('Acme Logistics')
     expect(withSender[0]?.['Net Amount']).toBe('42.00')
+  })
+
+  it('FedEx: keeps rows when Invoice Date is blank but Transaction Date is set', () => {
+    const idx = Object.fromEntries(INVOICE_HEADERS.map((h, i) => [h, i])) as Record<string, number>
+    const cells = Array(INVOICE_HEADERS.length).fill('')
+    cells[idx['Invoice Date']] = ''
+    cells[idx['Transaction Date']] = '2025-03-01'
+    cells[idx['Invoice Number']] = 'FX-1'
+    cells[idx['Carrier Name']] = 'FedEx'
+    cells[idx['Net Amount']] = '10.00'
+    cells[idx['Charge Description']] = 'Ground'
+    cells[idx['Tracking Number']] = 'T1'
+
+    const csvText = cells.join(',')
+    const parsed = parseInvoiceCsvText(csvText)
+    const filtered = filterRowsLikeClubColorsPowerQuery(parsed)
+    expect(filtered).toHaveLength(1)
+  })
+
+  it('FedEx: drops rows when Invoice / Transaction / Shipment dates are all empty', () => {
+    const idx = Object.fromEntries(INVOICE_HEADERS.map((h, i) => [h, i])) as Record<string, number>
+    const cells = Array(INVOICE_HEADERS.length).fill('')
+    cells[idx['Carrier Name']] = 'FedEx'
+    cells[idx['Net Amount']] = '10.00'
+
+    const csvText = cells.join(',')
+    const parsed = parseInvoiceCsvText(csvText)
+    expect(filterRowsLikeClubColorsPowerQuery(parsed)).toHaveLength(0)
+  })
+
+  it('WWE: keeps rows when Shipment Date is set but Invoice Date is blank', () => {
+    const idx = Object.fromEntries(INVOICE_HEADERS.map((h, i) => [h, i])) as Record<string, number>
+    const cells = Array(INVOICE_HEADERS.length).fill('')
+    cells[idx['Invoice Date']] = ''
+    cells[idx['Shipment Date']] = '2025-04-10'
+    cells[idx['Carrier Name']] = 'WWE'
+    cells[idx['Net Amount']] = '5.00'
+    cells[idx['Charge Description']] = 'SMALL PACKAGE FREIGHT'
+
+    const csvText = cells.join(',')
+    const parsed = parseInvoiceCsvText(csvText)
+    expect(filterRowsLikeClubColorsPowerQuery(parsed)).toHaveLength(1)
   })
 })

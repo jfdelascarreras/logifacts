@@ -2,7 +2,9 @@
 export const PREMIUM_ANALYSIS_UPDATED = 'premium-analysis-updated' as const
 
 export type PremiumAnalysisUpdatedDetail = {
-  summary: unknown
+  summary?: unknown
   uploadId?: string
   uploadsAnalyzed?: number
+  /** Set when the last stored CSV was removed and dashboard metrics should reset. */
+  cleared?: boolean
 }

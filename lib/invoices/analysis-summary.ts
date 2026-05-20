@@ -2,9 +2,14 @@
  * Pure invoice aggregation — same logic as POST /api/invoices/analyze (minus I/O).
  * Kept deterministic for accuracy tests / golden proofs.
  */
-import type { InvoiceRecord } from './csv'
-import { normalizeAccountNumberString, toNumber } from './csv'
+import {
+  normalizeAccountNumberString,
+  primaryRollupDateRaw,
+  toNumber,
+  type InvoiceRecord,
+} from './csv'
 
+/** Shape of taxonomy rows loaded from `master_mapping` for Premium Analysis lookups. */
 export type ChargeDescriptionMappingRow = {
   charge_description: string
   transportation_mode: string
@@ -13,7 +18,22 @@ export type ChargeDescriptionMappingRow = {
   category_3: string
   category_4: string
   category_5: string
+  /** Canonical carrier dimension for multi-carrier workbooks (`UPS`, `FedEx`, `WWE`). */
+  carrier?: string | null
+  standardized_charge?: string | null
 }
+
+type ChargeTaxonomyValue = {
+  transportation_mode: string
+  category_1: string
+  category_2: string
+  category_3: string
+  category_4: string
+  category_5: string
+}
+
+/** Premium analysis mapping lookup (`UPS`, `FedEx`, `UPS\t${desc}`, etc.). */
+type InvoiceTaxonomyLookup = Map<string, ChargeTaxonomyValue>
 
 export type InvoiceAnalysisSummary = {
   totalRows: number
@@ -182,7 +202,7 @@ export function buildInvoiceAnalysisFilterMeta(records: InvoiceRecord[]): Invoic
   const yearMonths = new Set<string>()
   const accounts = new Set<string>()
   for (const rec of records) {
-    const dk = parseInvoiceDateKey(rec['Invoice Date'])
+    const dk = parseInvoiceDateKey(primaryRollupDateRaw(rec))
     if (dk) {
       years.add(Number(dk.slice(0, 4)))
       yearMonths.add(dk.slice(0, 7))
@@ -293,7 +313,7 @@ export function filterInvoiceRecords(
   const wantAcc = String(filters.accountNumber ?? '').trim().toLowerCase()
 
   return records.filter((rec) => {
-    const dk = parseInvoiceDateKey(rec['Invoice Date'])
+    const dk = parseInvoiceDateKey(primaryRollupDateRaw(rec))
     if (wantYm && isInvoiceYearMonthKey(wantYm)) {
       if (!dk || dk.slice(0, 7) !== wantYm) return false
     } else {
@@ -372,6 +392,39 @@ export function normalizeMappingText(value: string | null | undefined): string {
     .toUpperCase()
 }
 
+/** Align CSV + workbook carriers to `{UPS,FEDEX,WWE}` keys stored in taxonomy maps. */
+function canonicalPremiumMappingCarrier(norm: string): string {
+  if (norm === '' || norm === 'UPS') return 'UPS'
+  if (norm.includes('FED')) return 'FEDEX'
+  if (norm.includes('WORLD') || norm === 'WWE' || norm.includes('WWE')) return 'WWE'
+  return norm
+}
+
+function invoiceCarrierPremiumKey(csvCarrier: string | null | undefined): string {
+  const k = normalizeMappingText(csvCarrier)
+  return canonicalPremiumMappingCarrier(k === '' ? 'UPS' : k)
+}
+
+function lookupChargeTaxonomy(
+  lookup: InvoiceTaxonomyLookup,
+  invoiceCarrierRaw: string | null | undefined,
+  chargeDescriptionRaw: string | null | undefined
+): ChargeTaxonomyValue | undefined {
+  const descNorm = normalizeMappingText(chargeDescriptionRaw)
+  if (!descNorm) return undefined
+
+  let carrierLookup = invoiceCarrierPremiumKey(invoiceCarrierRaw)
+
+  let mapped = lookup.get(`${carrierLookup}\t${descNorm}`)
+  if (!mapped && carrierLookup !== 'UPS') {
+    mapped = lookup.get(`UPS\t${descNorm}`)
+  }
+  if (!mapped) {
+    mapped = lookup.get(descNorm)
+  }
+  return mapped
+}
+
 export function modeFromZone(zone: number): string {
   if (zone >= 400 && zone < 500) return 'Express/Special'
   if (zone >= 300 && zone < 400) return 'Air'
@@ -391,58 +444,58 @@ export function weightBucketFromLbs(weightLbs: number): { bucket: string; sort: 
   return { bucket: '100+ lbs', sort: 7 }
 }
 
+/**
+ * TODO (`standardized_charge` — cross-carrier normalized reporting)
+ *
+ * **`standardized_charge`** is the Master Mapping column that gives a carrier-agnostic label for invoice
+ * `Charge Description` rows (FedEx/WWE vs UPS wording converges on shared buckets for apples-to-apples KPIs).
+ * It is persisted on **`master_mapping`** and is already **selected** in `computePremiumInvoiceAnalysis`
+ * (`premium-analysis-compute.ts`), but the lookup/value used here (**`ChargeTaxonomyValue`** / **`buildChargeDescriptionLookup`**)
+ * forwards only **`transportation_mode`** + **`category_1–5`** into **`computeInvoiceAnalysisSummary`**. None of the
+ * current rollups or filter metadata group by **`standardized_charge`**.
+ *
+ * Next steps toward a **first-class** dashboard dimension:
+ * carry **`standardized_charge`** on the taxonomy payload keyed by **`(carrier, charge_description)`**,
+ * classify each scanned line with that field, aggregate new summary arrays (distinct values, spend by standardized label,
+ * time splits, etc.), extend **`InvoiceAnalysisFilters` / filterMeta** and **`POST`/query** contracts for optional
+ * `standardized_charge` filtering, update dashboard widgets to pivot/filter on it alongside carriers and categories.
+ */
 export function buildChargeDescriptionLookup(
   rows: ChargeDescriptionMappingRow[] | null | undefined
-): Map<
-  string,
-  {
-    transportation_mode: string
-    category_1: string
-    category_2: string
-    category_3: string
-    category_4: string
-    category_5: string
-  }
-> {
-  const mappingByDescription = new Map<
-    string,
-    {
-      transportation_mode: string
-      category_1: string
-      category_2: string
-      category_3: string
-      category_4: string
-      category_5: string
-    }
-  >()
+): InvoiceTaxonomyLookup {
+  const mappingByDescription: InvoiceTaxonomyLookup = new Map()
+  const payloadFrom = (m: ChargeDescriptionMappingRow): ChargeTaxonomyValue => ({
+    transportation_mode: String(m.transportation_mode ?? '').trim(),
+    category_1: String(m.category_1 ?? '').trim(),
+    category_2: String(m.category_2 ?? '').trim(),
+    category_3: String(m.category_3 ?? '').trim(),
+    category_4: String(m.category_4 ?? '').trim(),
+    category_5: String(m.category_5 ?? '').trim(),
+  })
+
   for (const m of rows ?? []) {
-    mappingByDescription.set(normalizeMappingText(m.charge_description), {
-      transportation_mode: String(m.transportation_mode ?? '').trim(),
-      category_1: String(m.category_1 ?? '').trim(),
-      category_2: String(m.category_2 ?? '').trim(),
-      category_3: String(m.category_3 ?? '').trim(),
-      category_4: String(m.category_4 ?? '').trim(),
-      category_5: String(m.category_5 ?? '').trim(),
-    })
+    const descNorm = normalizeMappingText(m.charge_description)
+    if (!descNorm) continue
+
+    const rawCarrier = normalizeMappingText((m.carrier ?? '') || '')
+    const carrierLookup = canonicalPremiumMappingCarrier(rawCarrier === '' ? 'UPS' : rawCarrier)
+
+    const payload = payloadFrom(m)
+
+    mappingByDescription.set(`${carrierLookup}\t${descNorm}`, payload)
+
+    /** Legacy uploads only keyed UPS charge descriptions alone. */
+    if (carrierLookup === 'UPS') {
+      mappingByDescription.set(descNorm, payload)
+    }
   }
+
   return mappingByDescription
 }
 
-type MappingLookup = Map<
-  string,
-  {
-    transportation_mode: string
-    category_1: string
-    category_2: string
-    category_3: string
-    category_4: string
-    category_5: string
-  }
->
-
 export function computeInvoiceAnalysisSummary(
   records: InvoiceRecord[],
-  mappingByDescription: MappingLookup
+  mappingByDescription: InvoiceTaxonomyLookup
 ): InvoiceAnalysisSummary {
   const summary: InvoiceAnalysisSummary = {
     totalRows: records.length,
@@ -530,7 +583,11 @@ export function computeInvoiceAnalysisSummary(
     const chargeCategoryCode = (rec['Charge Category Code'] ?? '').trim().toUpperCase()
     const chargeClassification = (rec['Charge Classification Code'] ?? '').trim().toUpperCase()
     const chargeDescription = (rec['Charge Description'] ?? '').trim()
-    const mapping = mappingByDescription.get(normalizeMappingText(chargeDescription))
+    const mapping = lookupChargeTaxonomy(
+      mappingByDescription,
+      rec['Carrier Name'] ?? '',
+      chargeDescription
+    )
     const category1 = normalizeMappingText(mapping?.category_1)
     const category2 = normalizeMappingText(mapping?.category_2)
     const category3 = normalizeMappingText(mapping?.category_3)
@@ -605,7 +662,7 @@ export function computeInvoiceAnalysisSummary(
     summary.byService[service].totalNetAmount += netAmount
     summary.byService[service].totalInvoiceAmount += invoiceAmount
 
-    const dateKey = parseInvoiceDateKey(rec['Invoice Date'])
+    const dateKey = parseInvoiceDateKey(primaryRollupDateRaw(rec))
     const accountDim = normalizeAccountNumberString(rec['Account Number']) || '(no account)'
     if (dateKey) {
       const daily = dailySpend.get(dateKey) ?? {
