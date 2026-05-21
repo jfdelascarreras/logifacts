@@ -60,7 +60,7 @@ One row per uploaded CSV file. Stores the raw `csv_text` and a content fingerpri
 | `original_file_name` | `text` | Cleaned of RFC 5987 encoding prefix |
 | `csv_text` | `text` | Full raw CSV content |
 | `row_count` | `int` | Number of data rows |
-| `status` | `text` | Upload processing status |
+| `status` | `text` | Always `'uploaded'` — set at insert time, never updated |
 | `content_sha256` | `text` | SHA-256 of normalized CSV; used to skip duplicate files |
 | `created_at` | `timestamptz` | |
 
@@ -75,22 +75,22 @@ One row per uploaded CSV file. Stores the raw `csv_text` and a content fingerpri
 
 ### `invoice_upload_analyses`
 
-One row per user. Stores the full computed analysis JSON so the dashboard can load it instantly without re-parsing CSVs. Upserted (keyed by `invoice_upload_id`) on every Refresh.
+Stores the full computed analysis JSON so the dashboard can load it instantly without re-parsing CSVs. One row per analysis run — keyed by whichever `invoice_upload_id` was the user's most recent upload at the time of the Refresh. A user who uploads files in multiple batches accumulates multiple rows; the GET endpoint orders by `updated_at DESC` and returns the latest.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `uuid` PK | |
 | `user_id` | `uuid` FK → `auth.users` | |
-| `invoice_upload_id` | `uuid` FK → `invoice_uploads` | Points to the user's most recent upload at time of analysis |
+| `invoice_upload_id` | `uuid` FK → `invoice_uploads` | Most recent upload at time of analysis (upsert key) |
 | `summary` | `jsonb` | Full `InvoiceAnalysisSummary` — monthly spend, category breakdowns, filter metadata, ingest diagnostics |
 | `created_at` | `timestamptz` | |
 | `updated_at` | `timestamptz` | |
 
-**Constraints:** `UNIQUE (invoice_upload_id)` — upsert target.
+**Constraints:** `UNIQUE (invoice_upload_id)` — upsert target. Refreshing with the same latest upload ID overwrites the row; uploading new files changes the latest ID and creates a new row.
 
 **RLS:** Per-user SELECT / INSERT / UPDATE / DELETE via `auth.uid() = user_id`.
 
-**Cache layer:** Redis key `analysis:${userId}` mirrors this row. Invalidated on every `POST /api/invoices/analyze`. If Redis misses, the GET falls back to this table.
+**Cache layer:** Redis key `analysis:${userId}` (TTL 1 hour) mirrors the full list of rows. Invalidated on every `POST /api/invoices/analyze`. If Redis misses, the GET falls back to Supabase.
 
 ---
 
@@ -106,6 +106,8 @@ Pre-aggregated daily spend. One row per `(user_id, invoice_date, account_number)
 | `total_cost` | `numeric` | Sum of all charges for that day / account |
 | `net_spend` | `numeric` | Same as `total_cost` currently |
 
+**No explicit primary key.** Identity is the unique index below.
+
 **Constraints:** `UNIQUE (user_id, invoice_date, account_number)` (replaces an earlier unique index that didn't include `account_number`).
 
 **RLS:** Per-user SELECT / INSERT / UPDATE / DELETE via `auth.uid() = user_id`.
@@ -118,7 +120,7 @@ Pre-aggregated daily spend. One row per `(user_id, invoice_date, account_number)
 
 ### `invoice_rows`
 
-Structured, deduplicated charge lines. Populated during the multipart ingest path (now deprecated for new uploads; see §Deprecated). Retained as a source for category breakdowns.
+Structured, deduplicated charge lines. The table schema exists and has RLS policies, but **no code in the current active flow writes to it** — it is currently unpopulated. It was designed as the replacement for `invoice_lines` (deprecated multipart path) but the migration to the active write path has not been implemented. Do not read from it expecting data.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -245,21 +247,38 @@ Migrations are not auto-applied. Use the Supabase SQL Editor to run them manuall
 ## Data flow: upload → dashboard
 
 ```
-1. User uploads CSV
-   └── client: sha256 dedup check
-   └── INSERT invoice_uploads (csv_text, content_sha256)
+1. User selects CSV files (max 5 MB each)
+   └── client: compute content_sha256 for each file
+   └── client: skip files whose hash already exists in invoice_uploads (dedup)
+   └── client: fallback dedup by filename for uploads missing a hash
+   └── INSERT invoice_uploads in chunks of 5 (INSERT_CHUNK_SIZE)
+       columns: user_id, original_file_name, csv_text, row_count,
+                status='uploaded', content_sha256
 
 2. User clicks "Refresh analysis"
    └── POST /api/invoices/analyze
-       ├── SELECT invoice_uploads (metadata only, then csv_text in batches of 10)
-       ├── SELECT master_mapping (full table, cached in memory by fingerprint)
-       ├── parse + filter + dedupe + aggregate  [lib/invoices/]
+       ├── SELECT invoice_uploads metadata (id, created_at, content_sha256)
+       │    — no csv_text yet, avoids statement timeout on large file sets
+       ├── SELECT master_mapping (full table; ~249 rows)
+       ├── Backfill content_sha256 for any uploads missing a hash
+       ├── Dedupe uploads by content_sha256 (server-side safety net)
+       ├── Check in-memory parse cache (key = user_id + file fingerprint)
+       │    ├── Cache hit  → skip re-parsing
+       │    └── Cache miss → fetch csv_text in batches of 10 (avoids
+       │                     Supabase per-statement row-data timeout)
+       │                   → parse + Club Colors filter + dedup rows
+       │                   → store in parse cache
+       ├── Apply dashboard filters (if any)
+       ├── computeInvoiceAnalysisSummary  [lib/invoices/analysis-summary.ts]
        ├── UPSERT invoice_upload_analyses (full JSON summary)
-       ├── DELETE + INSERT invoice_spend_by_date  (only if no filters active)
+       ├── DELETE + INSERT invoice_spend_by_date  (skipped if filters active)
        └── invalidate Redis key  analysis:{userId}
 
 3. Dashboard loads
    └── GET /api/invoices/analyze
-       ├── Redis hit → return immediately
-       └── Redis miss → SELECT invoice_upload_analyses → cache in Redis
+       ├── Redis hit  → return immediately (TTL: 1 hour)
+       └── Redis miss → SELECT invoice_upload_analyses ORDER BY updated_at DESC
+                      → populate Redis → return
 ```
+
+**Parse cache** (`lib/invoices/analyze-parse-cache.ts`): in-memory (process-level), keyed by `(userId, SHA-256 of all upload hashes)`. Survives within a single serverless invocation — does not persist across requests. Prevents re-parsing the same CSVs when only filters change between refreshes.
