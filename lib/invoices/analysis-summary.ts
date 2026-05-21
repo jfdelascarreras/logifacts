@@ -616,6 +616,10 @@ export function computeInvoiceAnalysisSummary(
       summary.measures.costSurcharges += netAmount
     }
 
+    // INF = Information / non-revenue charges (e.g. peak adjustment notifications).
+    // ICC = Invoice Charge Credit — these are offsets/credits, not true accessorial costs.
+    // Both are classified ACC in UPS data but are excluded from costAccessorials to match
+    // the Power BI / Python dashboard definition used by the finance team.
     const isExcludedAccCat = chargeCategoryCode === 'INF' || chargeCategoryCode === 'ICC'
     if (chargeClassification === 'ACC' && !isExcludedAccCat) {
       summary.measures.costAccessorials += netAmount

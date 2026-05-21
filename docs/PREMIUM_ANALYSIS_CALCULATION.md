@@ -30,7 +30,7 @@ Related architecture overview: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 High-level flow inside **`computePremiumInvoiceAnalysis`**:
 
-1. **Load** up to **200** `invoice_uploads` for the user (newest first): `id`, `csv_text`, `created_at`, `content_sha256`.
+1. **Load** up to **200** `invoice_uploads` for the user (newest first): metadata only (`id`, `created_at`, `content_sha256`) in one query — **no `csv_text` yet** (fetching csv_text for 50+ files in a single query exceeds Supabase's statement timeout). Then fetch `csv_text` in **batches of 10** (`CSV_FETCH_BATCH = 10`) using `.in('id', batchIds)`.
 2. **Backfill** missing `content_sha256` from `csv_text` and persist (so dedupe is stable).
 3. **Dedupe uploads by hash:** `dedupeInvoiceUploadRowsBySha256` keeps first occurrence per `content_sha256` (same binary content only counted once). Count reported as **`ingestDiagnostics.duplicateUploadRowsSkipped`**.
 4. **Parse cache (optional):** if unchanged fingerprint + same profile company name, reuse **`fullRecords`** + **`ingestDiagnostics`** from `lib/invoices/analyze-parse-cache.ts`.
@@ -104,7 +104,7 @@ For each charge line:
 - **`totals.dutyAmount`** += **`Duty Amount`**
 - **`measures.totalCost`** += **`Net Amount`** (same as net in this engine)
 - **`sumBilledWeight`** / **`sumEnteredWeight`** accumulate weights (all rows)
-- **`byCarrier`** / **`byService`**: increment **`shipmentCount`** by **1 per charge line** (not per distinct shipment), and add net / invoice amounts.
+- **`byCarrier`** / **`byService`**: increment **`shipmentCount`** by **1 per charge line** (not per distinct shipment — the field name is misleading; one shipment produces many charge lines), and add net / invoice amounts.
 
 ---
 
