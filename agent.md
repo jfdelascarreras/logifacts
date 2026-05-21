@@ -97,34 +97,19 @@ The core value is turning a 250-column carrier invoice — which no human wants 
 
 ## 4. Database schema
 
-### 4.1 What migrations in `supabase/migrations/` define or change
+Full reference: **[`docs/DATABASE.md`](./docs/DATABASE.md)** — complete column lists, RLS policies, migration history, and upload → dashboard data flow.
 
-- **`20260508123000_enforce_rls_for_invoice_tables.sql`** — Enables RLS and idempotent policies for `invoice_uploads`, `invoice_upload_analyses`, `invoice_spend_by_date` (`auth.uid() = user_id`). `dim_date` stays shared/read-only.
-- **`20260508160000_invoice_uploads_content_sha256.sql`** — Adds `invoice_uploads.content_sha256 text`, index on `(user_id, content_sha256)` where not null.
-- **`20260509120000_invoice_spend_by_date_account_number.sql`** — Adds `invoice_spend_by_date.account_number text NOT NULL DEFAULT '(legacy)'`; unique index `(user_id, invoice_date, account_number)`.
-- **`20260508235000_drop_invoice_spend_by_date_dim_date_fk.sql`** — Drops FK to `dim_date` if present.
-- **`20260514170000_invoice_rows.sql`** — `CREATE TABLE public.invoice_rows` with `user_id`, `invoice_upload_id` (FK nullable), `row_hash`, analysis-shaped text columns, timestamps. Unique `(user_id, row_hash)`. RLS SELECT/INSERT/DELETE. **No UPDATE policy.**
-- **`20260515210000_invoice_lines_kpi_columns.sql`** — Adds `charge_classification_code`, `charge_category_code`, `package_quantity` to `invoice_lines`. Index on `(invoice_id, charge_classification_code, charge_category_code)`.
-- **`20260519140000_drop_charge_description_mappings_after_parity.sql`** — Drops `charge_description_mappings`. Consolidates on `master_mapping`.
+### 4.1 Active tables (summary)
 
-**Important:** Migrations here only `CREATE` the `invoice_rows` table. `invoice_uploads`, `invoice_upload_analyses`, `master_mapping`, and `invoice_spend_by_date` are assumed to exist from earlier work. Reconcile with the linked Supabase project for full DDL.
+- **`master_mapping`** — Shared reference table. Grain `(carrier, charge_description)`. ~249 rows covering UPS and FedEx. All authenticated users may SELECT; writes via service role only.
+- **`invoice_uploads`** — Raw CSV storage. One row per file. Per-user RLS. Includes `content_sha256` for dedup.
+- **`invoice_upload_analyses`** — Full JSON analysis cache. Upserted on every Refresh. One row per user (keyed by most-recent upload). Mirrored in Redis.
+- **`invoice_spend_by_date`** — Daily spend rollup. One row per `(user_id, invoice_date, account_number)`. Written only on unfiltered refreshes. Primary source for time-series charts.
+- **`invoice_rows`** — Structured charge lines with dedup by `row_hash`. No UPDATE policy — append-only.
 
-### 4.2 Application-inferred table shapes
+### 4.2 Deprecated / removed
 
-- **`master_mapping`** — Grain `(carrier, charge_description)`. Fields: `id`, `carrier`, `charge_description`, `transportation_mode`, `category_1`–`category_5`, `standardized_charge`.
-- **`invoice_uploads`** — Fields: `id`, `user_id`, `original_file_name`, `csv_text`, `row_count`, `status`, `content_sha256`, `created_at`.
-- **`invoice_upload_analyses`** — Fields: `id`, `user_id`, `invoice_upload_id`, `summary`, `created_at`, `updated_at`. Upsert on `invoice_upload_id`.
-- **`invoice_spend_by_date`** — Fields: `user_id`, `invoice_date`, `account_number`, `total_cost`, `net_spend`. Unique on `(user_id, invoice_date, account_number)`. Delete-then-upsert per analysis run (only when no active filters). **Primary source for dashboard time-series charts.**
-- **`invoice_rows`** — Fields: `user_id`, `invoice_upload_id` (nullable FK), `row_hash`, analysis-shaped text columns, timestamps. **Primary source for dashboard category breakdowns.**
-
-### 4.3 Relationships
-
-- `invoice_rows.user_id` → `auth.users`; optional `invoice_upload_id` → `invoice_uploads`
-- `invoice_upload_analyses` keyed by `invoice_upload_id`, scoped by `user_id`
-
-### 4.4 Deprecated / removed
-
-- **`charge_description_mappings`** — Dropped. Do not reference or recreate.
+- **`charge_description_mappings`** — Dropped. Do not reference or recreate. Replaced by `master_mapping`.
 - **`invoices`** / **`invoice_lines`** — Multipart ingest path is deprecated. Do not build on these tables. All ingestion goes through `invoice_uploads`.
 
 ---
@@ -390,6 +375,7 @@ Run with a different model than the one that implemented for best results.
 
 | Topic | Location |
 |-------|----------|
+| **Full database schema, RLS, migration history** | `docs/DATABASE.md` |
 | Architecture diagram and folder map | `docs/ARCHITECTURE.md` |
 | KPI / premium calculation steps | `docs/PREMIUM_ANALYSIS_CALCULATION.md` |
 | Legacy taxonomy migration notes | `docs/CHARGE_DESCRIPTION_MAPPINGS_MIGRATION.md` |
