@@ -5,3 +5,4 @@
 export * from './analysis-summary'
 export * from './csv'
 export * from './dedupe-hash'
+export * from './forecasting'

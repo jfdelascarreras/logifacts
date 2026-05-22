@@ -463,3 +463,332 @@ describe('parse → filter → profile sender (pipeline smoke)', () => {
     expect(filterRowsLikeClubColorsPowerQuery(parsed)).toHaveLength(1)
   })
 })
+
+describe('modeFromZone — all boundary edges', () => {
+  it('Ground: 0–99', () => {
+    expect(modeFromZone(0)).toBe('Ground')
+    expect(modeFromZone(51)).toBe('Ground')
+    expect(modeFromZone(99)).toBe('Ground')
+  })
+  it('International Import: 100–199', () => {
+    expect(modeFromZone(100)).toBe('International Import')
+    expect(modeFromZone(150)).toBe('International Import')
+    expect(modeFromZone(199)).toBe('International Import')
+  })
+  it('International Export: 200–299', () => {
+    expect(modeFromZone(200)).toBe('International Export')
+    expect(modeFromZone(250)).toBe('International Export')
+    expect(modeFromZone(299)).toBe('International Export')
+  })
+  it('Air: 300–399', () => {
+    expect(modeFromZone(300)).toBe('Air')
+    expect(modeFromZone(350)).toBe('Air')
+    expect(modeFromZone(399)).toBe('Air')
+  })
+  it('Express/Special: 400–499', () => {
+    expect(modeFromZone(400)).toBe('Express/Special')
+    expect(modeFromZone(481)).toBe('Express/Special')
+    expect(modeFromZone(499)).toBe('Express/Special')
+  })
+  it('Unknown: below 0 and 500+', () => {
+    expect(modeFromZone(-1)).toBe('Unknown')
+    expect(modeFromZone(500)).toBe('Unknown')
+    expect(modeFromZone(9999)).toBe('Unknown')
+  })
+})
+
+describe('weightBucketFromLbs — all boundary edges', () => {
+  it('0-1 lbs: 0 through 1.0', () => {
+    expect(weightBucketFromLbs(0).bucket).toBe('0-1 lbs')
+    expect(weightBucketFromLbs(0.5).bucket).toBe('0-1 lbs')
+    expect(weightBucketFromLbs(1.0).bucket).toBe('0-1 lbs')
+  })
+  it('2-5 lbs: just above 1 through 5', () => {
+    expect(weightBucketFromLbs(1.01).bucket).toBe('2-5 lbs')
+    expect(weightBucketFromLbs(3).bucket).toBe('2-5 lbs')
+    expect(weightBucketFromLbs(5).bucket).toBe('2-5 lbs')
+  })
+  it('6-10 lbs: just above 5 through 10', () => {
+    expect(weightBucketFromLbs(5.01).bucket).toBe('6-10 lbs')
+    expect(weightBucketFromLbs(7).bucket).toBe('6-10 lbs')
+    expect(weightBucketFromLbs(10).bucket).toBe('6-10 lbs')
+  })
+  it('11-20 lbs: just above 10 through 20', () => {
+    expect(weightBucketFromLbs(10.01).bucket).toBe('11-20 lbs')
+    expect(weightBucketFromLbs(15).bucket).toBe('11-20 lbs')
+    expect(weightBucketFromLbs(20).bucket).toBe('11-20 lbs')
+  })
+  it('21-50 lbs: just above 20 through 50', () => {
+    expect(weightBucketFromLbs(20.01).bucket).toBe('21-50 lbs')
+    expect(weightBucketFromLbs(35).bucket).toBe('21-50 lbs')
+    expect(weightBucketFromLbs(50).bucket).toBe('21-50 lbs')
+  })
+  it('51-100 lbs: just above 50 through 100', () => {
+    expect(weightBucketFromLbs(50.01).bucket).toBe('51-100 lbs')
+    expect(weightBucketFromLbs(75).bucket).toBe('51-100 lbs')
+    expect(weightBucketFromLbs(100).bucket).toBe('51-100 lbs')
+  })
+  it('100+ lbs: above 100', () => {
+    expect(weightBucketFromLbs(100.01).bucket).toBe('100+ lbs')
+    expect(weightBucketFromLbs(999).bucket).toBe('100+ lbs')
+  })
+})
+
+describe('buildChargeDescriptionLookup — carrier priority and legacy fallback', () => {
+  const ups: ChargeDescriptionMappingRow = {
+    carrier: 'UPS',
+    charge_description: 'Fuel Surcharge',
+    transportation_mode: 'Parcel',
+    category_1: 'Fuel',
+    category_2: 'UPS Fuel',
+    category_3: 'FUEL SURCHARGE',
+    category_4: '',
+    category_5: '',
+  }
+  const fedex: ChargeDescriptionMappingRow = {
+    carrier: 'FedEx',
+    charge_description: 'Fuel Surcharge',
+    transportation_mode: 'Parcel',
+    category_1: 'Fuel',
+    category_2: 'FedEx Fuel',
+    category_3: 'FUEL SURCHARGE',
+    category_4: '',
+    category_5: '',
+  }
+
+  it('UPS composite key and legacy key both resolve', () => {
+    const lookup = buildChargeDescriptionLookup([ups])
+    expect(lookup.get('UPS\tFUEL SURCHARGE')?.category_2).toBe('UPS Fuel')
+    expect(lookup.get('FUEL SURCHARGE')?.category_2).toBe('UPS Fuel')
+  })
+
+  it('FedEx composite key resolves but no legacy key is set', () => {
+    const lookup = buildChargeDescriptionLookup([fedex])
+    expect(lookup.get('FEDEX\tFUEL SURCHARGE')?.category_2).toBe('FedEx Fuel')
+    expect(lookup.get('FUEL SURCHARGE')).toBeUndefined()
+  })
+
+  it('UPS key does not overwrite FedEx key when both present', () => {
+    const lookup = buildChargeDescriptionLookup([ups, fedex])
+    expect(lookup.get('UPS\tFUEL SURCHARGE')?.category_2).toBe('UPS Fuel')
+    expect(lookup.get('FEDEX\tFUEL SURCHARGE')?.category_2).toBe('FedEx Fuel')
+  })
+
+  it('normalizes charge_description casing and whitespace before keying', () => {
+    const row: ChargeDescriptionMappingRow = {
+      carrier: 'UPS',
+      charge_description: '  fuel  surcharge  ',
+      transportation_mode: '',
+      category_1: '',
+      category_2: 'normalized',
+      category_3: '',
+      category_4: '',
+      category_5: '',
+    }
+    const lookup = buildChargeDescriptionLookup([row])
+    expect(lookup.get('FUEL SURCHARGE')?.category_2).toBe('normalized')
+  })
+})
+
+describe('computeInvoiceAnalysisSummary — byCarrier/byService chargeLineCount', () => {
+  it('increments chargeLineCount per charge line, not per shipment', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const line1 = invoiceRow({ 'Carrier Name': 'UPS', 'Net Amount': '10', 'Invoice Amount': '10', 'Original Service Description': 'Ground' })
+    const line2 = invoiceRow({ 'Carrier Name': 'UPS', 'Net Amount': '5', 'Invoice Amount': '5', 'Original Service Description': 'Ground' })
+    const line3 = invoiceRow({ 'Carrier Name': 'FedEx', 'Net Amount': '20', 'Invoice Amount': '20', 'Original Service Description': 'Express' })
+
+    const summary = computeInvoiceAnalysisSummary([line1, line2, line3], lookup)
+
+    expect(summary.byCarrier['UPS']?.chargeLineCount).toBe(2)
+    expect(summary.byCarrier['FedEx']?.chargeLineCount).toBe(1)
+    expect(summary.byService['Ground']?.chargeLineCount).toBe(2)
+    expect(summary.byService['Express']?.chargeLineCount).toBe(1)
+  })
+})
+
+describe('computeInvoiceAnalysisSummary — INF/ICC exclusion from costAccessorials', () => {
+  it('excludes ACC rows with category code INF from costAccessorials', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const inf = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Net Amount': '3.00',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'ACC',
+      'Charge Category Code': 'INF',
+    })
+    const summary = computeInvoiceAnalysisSummary([inf], lookup)
+    expect(summary.measures.costAccessorials).toBe(0)
+    expect(summary.measures.totalCost).toBeCloseTo(3, 6)
+  })
+
+  it('excludes ACC rows with category code ICC from costAccessorials', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const icc = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Net Amount': '-2.50',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'ACC',
+      'Charge Category Code': 'ICC',
+    })
+    const summary = computeInvoiceAnalysisSummary([icc], lookup)
+    expect(summary.measures.costAccessorials).toBe(0)
+  })
+
+  it('includes ACC rows with other category codes in costAccessorials', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const res = invoiceRow({
+      'Net Amount': '7.00',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'ACC',
+      'Charge Category Code': 'RES',
+    })
+    const summary = computeInvoiceAnalysisSummary([res], lookup)
+    expect(summary.measures.costAccessorials).toBeCloseTo(7, 6)
+  })
+})
+
+describe('computeInvoiceAnalysisSummary — CPP rollups', () => {
+  it('category2VolumeCpp totals cost and volume, computes CPP', () => {
+    const mapping: ChargeDescriptionMappingRow = {
+      carrier: 'UPS',
+      charge_description: 'Ground',
+      transportation_mode: 'Parcel',
+      category_1: 'Parcel',
+      category_2: 'Base Freight',
+      category_3: '',
+      category_4: '',
+      category_5: '',
+    }
+    const lookup = buildChargeDescriptionLookup([mapping])
+    const row1 = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Net Amount': '100',
+      'Invoice Amount': '100',
+      'Duty Amount': '0',
+      'Package Quantity': '2',
+      'Zone': '51',
+      'Charge Description': 'Ground',
+    })
+    const row2 = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Net Amount': '50',
+      'Invoice Amount': '50',
+      'Duty Amount': '0',
+      'Package Quantity': '1',
+      'Zone': '51',
+      'Charge Description': 'Ground',
+    })
+
+    const summary = computeInvoiceAnalysisSummary([row1, row2], lookup)
+    // category2 is normalized to uppercase by normalizeMappingText
+    const bf = summary.category2VolumeCpp.find((c) => c.category2 === 'BASE FREIGHT')
+    expect(bf).toBeDefined()
+    expect(bf!.totalCost).toBeCloseTo(150, 6)
+    // volumeUnits = max(1, packageQty) per line: 2 + 1 = 3
+    expect(bf!.totalVolume).toBe(3)
+    expect(bf!.totalCpp).toBeCloseTo(50, 6)
+  })
+
+  it('modeVolumeCpp groups by zone-derived mode', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const groundRow = invoiceRow({ 'Net Amount': '60', 'Invoice Amount': '60', 'Duty Amount': '0', 'Zone': '51', 'Package Quantity': '3' })
+    const airRow = invoiceRow({ 'Net Amount': '90', 'Invoice Amount': '90', 'Duty Amount': '0', 'Zone': '301', 'Package Quantity': '3' })
+
+    const summary = computeInvoiceAnalysisSummary([groundRow, airRow], lookup)
+    const ground = summary.modeVolumeCpp.find((m) => m.mode === 'Ground')
+    const air = summary.modeVolumeCpp.find((m) => m.mode === 'Air')
+    expect(ground?.totalCost).toBeCloseTo(60, 6)
+    expect(ground?.totalVolume).toBe(3)
+    expect(air?.totalCost).toBeCloseTo(90, 6)
+    expect(air?.totalVolume).toBe(3)
+  })
+
+  it('weightBucketVolume groups by weight bucket', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const light = invoiceRow({ 'Net Amount': '10', 'Invoice Amount': '10', 'Duty Amount': '0', 'Billed Weight': '0.5', 'Package Quantity': '1' })
+    const heavy = invoiceRow({ 'Net Amount': '40', 'Invoice Amount': '40', 'Duty Amount': '0', 'Billed Weight': '15', 'Package Quantity': '2' })
+
+    const summary = computeInvoiceAnalysisSummary([light, heavy], lookup)
+    const b1 = summary.weightBucketVolume.find((w) => w.weightBucket === '0-1 lbs')
+    const b11 = summary.weightBucketVolume.find((w) => w.weightBucket === '11-20 lbs')
+    expect(b1?.totalCost).toBeCloseTo(10, 6)
+    expect(b1?.totalVolume).toBe(1)
+    expect(b11?.totalCost).toBeCloseTo(40, 6)
+    expect(b11?.totalVolume).toBe(2)
+  })
+})
+
+describe('computeInvoiceAnalysisSummary — dailySpend cost splits', () => {
+  it('dailySpend tracks fuel, surcharge, and accessorial breakdowns per date', () => {
+    const fuelMapping: ChargeDescriptionMappingRow = {
+      carrier: 'UPS',
+      charge_description: 'Fuel Surcharge',
+      transportation_mode: 'Other',
+      category_1: '',
+      category_2: '',
+      category_3: 'FUEL SURCHARGE',
+      category_4: '',
+      category_5: '',
+    }
+    const lookup = buildChargeDescriptionLookup([fuelMapping])
+
+    const freight = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-05-01',
+      'Net Amount': '80',
+      'Invoice Amount': '80',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'SHP',
+      'Charge Category Code': 'IMP',
+      'Charge Description': 'Ground',
+    })
+    const fuel = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-05-01',
+      'Net Amount': '12',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'SHP',
+      'Charge Category Code': 'IMP',
+      'Charge Description': 'Fuel Surcharge',
+    })
+    const acc = invoiceRow({
+      'Carrier Name': 'UPS',
+      'Invoice Date': '2025-05-01',
+      'Net Amount': '5',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': 'ACC',
+      'Charge Category Code': 'RES',
+      'Charge Description': 'Residential',
+    })
+
+    const summary = computeInvoiceAnalysisSummary([freight, fuel, acc], lookup)
+    const day = summary.dailySpend.find((d) => d.date === '2025-05-01')
+    expect(day?.totalCost).toBeCloseTo(97, 6)
+    expect(day?.costFuel).toBeCloseTo(12, 6)
+    expect(day?.costSurcharges).toBeCloseTo(12, 6)
+    expect(day?.costAccessorials).toBeCloseTo(5, 6)
+  })
+})
+
+describe('computeInvoiceAnalysisSummary — spendByInvoice no-account fallback', () => {
+  it('uses "(no account)" when account number is blank', () => {
+    const lookup = buildChargeDescriptionLookup([])
+    const row = invoiceRow({
+      'Invoice Number': 'INV-X',
+      'Invoice Date': '2025-06-01',
+      'Account Number': '',
+      'Net Amount': '25',
+      'Invoice Amount': '25',
+      'Duty Amount': '0',
+    })
+    const summary = computeInvoiceAnalysisSummary([row], lookup)
+    expect(summary.spendByInvoice).toHaveLength(1)
+    expect(summary.spendByInvoice[0]?.accountNumber).toBe('(no account)')
+    expect(summary.spendByInvoice[0]?.totalCost).toBeCloseTo(25, 6)
+  })
+})

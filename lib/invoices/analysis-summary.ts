@@ -32,6 +32,10 @@ type ChargeTaxonomyValue = {
   category_5: string
 }
 
+// category_3 is always passed through normalizeMappingText (trim+uppercase) before comparison,
+// so DB casing is irrelevant — these uppercase literals are the canonical normalized forms.
+const SURCHARGE_CATS = new Set(['FUEL SURCHARGE', 'ACCESSORIAL SURCHARGE', 'SURCHARGE'])
+
 /** Premium analysis mapping lookup (`UPS`, `FedEx`, `UPS\t${desc}`, etc.). */
 type InvoiceTaxonomyLookup = Map<string, ChargeTaxonomyValue>
 
@@ -39,11 +43,11 @@ export type InvoiceAnalysisSummary = {
   totalRows: number
   byCarrier: Record<
     string,
-    { shipmentCount: number; totalNetAmount: number; totalInvoiceAmount: number }
+    { chargeLineCount: number; totalNetAmount: number; totalInvoiceAmount: number }
   >
   byService: Record<
     string,
-    { shipmentCount: number; totalNetAmount: number; totalInvoiceAmount: number }
+    { chargeLineCount: number; totalNetAmount: number; totalInvoiceAmount: number }
   >
   totals: {
     netAmount: number
@@ -524,9 +528,6 @@ export function computeInvoiceAnalysisSummary(
     spendByInvoice: [],
   }
 
-  // Python: df["isSurcharge"] = df["Category 3"].isin([...])
-  const SURCHARGE_CATS = new Set(['FUEL SURCHARGE', 'ACCESSORIAL SURCHARGE', 'SURCHARGE'])
-
   let sumBilledWeight = 0
   let sumEnteredWeight = 0
   const invoiceSpend = new Map<
@@ -646,23 +647,23 @@ export function computeInvoiceAnalysisSummary(
 
     if (!summary.byCarrier[carrier]) {
       summary.byCarrier[carrier] = {
-        shipmentCount: 0,
+        chargeLineCount: 0,
         totalNetAmount: 0,
         totalInvoiceAmount: 0,
       }
     }
-    summary.byCarrier[carrier].shipmentCount += 1
+    summary.byCarrier[carrier].chargeLineCount += 1
     summary.byCarrier[carrier].totalNetAmount += netAmount
     summary.byCarrier[carrier].totalInvoiceAmount += invoiceAmount
 
     if (!summary.byService[service]) {
       summary.byService[service] = {
-        shipmentCount: 0,
+        chargeLineCount: 0,
         totalNetAmount: 0,
         totalInvoiceAmount: 0,
       }
     }
-    summary.byService[service].shipmentCount += 1
+    summary.byService[service].chargeLineCount += 1
     summary.byService[service].totalNetAmount += netAmount
     summary.byService[service].totalInvoiceAmount += invoiceAmount
 

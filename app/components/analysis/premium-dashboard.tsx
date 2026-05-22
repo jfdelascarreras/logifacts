@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { CostForecastCard } from '@/app/components/analysis/cost-forecast-card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
@@ -168,6 +169,7 @@ export function PremiumDashboard() {
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
   const [invoicesExpanded, setInvoicesExpanded] = useState(false)
+  const [activeTab, setActiveTab] = useState<'analysis' | 'forecast'>('analysis')
 
   const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
     const res = await fetch('/api/invoices/analyze', { method: 'GET', cache: 'no-store' })
@@ -442,6 +444,7 @@ export function PremiumDashboard() {
   }, [applySummaryPayload, loadHistory])
 
   const measures = summary?.measures
+  const hasActiveFilters = !!(filterYear || filterMonths.length || filterAccount)
   const invoiceTotals = (summary?.spendByInvoice ?? []).reduce(
     (acc, row) => {
       acc.totalCost += row.totalCost ?? 0
@@ -774,6 +777,24 @@ export function PremiumDashboard() {
           </Card>
         ) : null}
 
+        {summary ? (
+          <div className="flex gap-1 border-b">
+            {(['analysis', 'forecast'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+                  activeTab === tab
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab === 'analysis' ? 'Analysis' : 'Forecast'}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {loadingCached && !error ? (
           <div role="status" aria-live="polite" className="text-sm text-muted-foreground">
             Loading saved analysis…
@@ -796,6 +817,8 @@ export function PremiumDashboard() {
             </p>
           </div>
         ) : null}
+
+        {activeTab === 'analysis' && <>
 
         {summary && measures ? (
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -1241,6 +1264,16 @@ export function PremiumDashboard() {
             </Card>
           )
         })()}
+
+        </>}
+
+        {activeTab === 'forecast' && (
+          summary?.monthlySpend?.length ? (
+            <CostForecastCard monthlySpend={summary.monthlySpend} isFiltered={hasActiveFilters} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Run an analysis first to see the forecast.</p>
+          )
+        )}
       </div>
     </div>
   )

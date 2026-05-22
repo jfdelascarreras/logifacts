@@ -59,14 +59,14 @@ The core value is turning a 250-column carrier invoice — which no human wants 
 |------|------|
 | `app/` | Next.js App Router pages (`page.tsx`), `layout.tsx`, `globals.css`, API routes under `app/api/`. |
 | `app/api/invoices/` | Invoice HTTP API: `analyze/`, `analyze/export/`, `analysis/`, `export/[invoiceId]/`, `mapping/`, `upload/`. |
-| `app/api/pricing/` | Pricing API: rate estimation endpoints (to be created). |
+| `app/api/pricing/` | Pricing API: `estimate/` — UPS rate estimation endpoint. |
 | `app/components/` | Feature/UI by area: `analysis/`, `invoices/`, `dashboard/`, `pricing/`, `theme/`, `branding/`. Import alias `@/app-components/...` also resolves here. |
 | `components/` | Shared UI primitives (shadcn-style under `components/ui/`). |
 | `hooks/` | Shared hooks (e.g. `use-mobile.ts`). |
 | `lib/` | Shared libraries: Supabase clients (`lib/supabase/`), cache (`lib/cache/`), invoice domain (`lib/invoices/`), pricing domain (`lib/pricing/`). |
 | `lib/invoices/` | Core invoice domain: CSV, dedupe hash, `analysis-summary.ts` engine, parsers, mapping, exporter. |
 | `lib/invoices/parsers/` | Carrier parsers: `ups.ts`, `fedex.ts`, `wwe.ts`, shared `scalars.ts`. |
-| `lib/pricing/` | Pricing domain: rate calculation logic, carrier rate tables, shipment estimation (to be created). |
+| `lib/pricing/` | Pricing domain: `ups-estimate.ts` (orchestration), `ups-rates.ts` (constants + rate lookup), `ups-zone-lookup.ts`, `types.ts`, `data/` (rate + zone JSON). |
 | `types/` | Shared TS types (`types/invoice.ts` — `Invoice`, `InvoiceLine`, filters, carriers). |
 | `docs/` | Architecture and calculation documentation. |
 | `supabase/migrations/` | Versioned Postgres migrations (not complete DDL history — see §4). |
@@ -151,10 +151,11 @@ if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 - Future ML anomaly logic goes in `lib/invoices/anomaly/`, same rule.
 
 ### Pricing conventions
-- Pricing is stateless — no data persisted per query (unless a future milestone explicitly scopes that).
-- Rate logic is pure: `lib/pricing/` only. External carrier API calls go in the API route, not lib.
-- Dimensional weight must be calculated when applicable: `L × W × H / 139` (inches / lbs, UPS/FedEx standard).
+- Pricing is stateless — no data persisted per query.
+- Rate logic is pure: `lib/pricing/` only. No DB calls, no HTTP inside lib.
+- DIM divisors: **220** for Ground, **194** for all Air services (`3day`, `2day`, `nda_saver`, `nda`).
 - Label all rate results as **estimates** in the UI — actual charges may vary.
+- Full pipeline details: [`docs/PRICING_CALCULATION.md`](./docs/PRICING_CALCULATION.md).
 
 ---
 
@@ -225,51 +226,83 @@ Visualizes the output of the invoice analysis pipeline. Does not re-process raw 
 | Spend by category | `invoice_rows` | `category_1`–`category_5` (via `master_mapping`) |
 | Anomaly highlights | `invoice_upload_analyses` | `summary` JSON — flagged charges |
 
+### Spend Forecast (implemented)
+
+A **Forecast tab** on the Premium Analysis page projects Total Cost and Fuel Surcharge $ for the next 3 months.
+
+**Model:** time-series forecast of `base freight = totalCost − costFuel` using the best-fit baseline (mean / last_value / seasonal_naive). Fuel cost is applied on top as a scenario multiplier.
+
+**Scenarios:** Low / Current / High are auto-derived from the last 90 days of `lib/pricing/data/ups-fuel-surcharge-history.json` (maintained manually, prepend one row per week). User can also type a custom %.
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `lib/invoices/forecasting/` | Pure forecast functions (types, series, metrics, baselines, forecast, index) |
+| `lib/pricing/ups-fuel-surcharge-history.ts` | `loadFuelSurchargeHistory()`, `deriveFuelScenarios()` |
+| `lib/pricing/data/ups-fuel-surcharge-history.json` | Weekly UPS rate history (newest-first) |
+| `app/api/invoices/forecast/route.ts` | POST-only, auth-gated, no DB writes |
+| `app/components/analysis/cost-forecast-card.tsx` | Forecast tab UI (SVG chart + scenario picker) |
+
+Full doc: [`docs/FORECASTING.md`](./docs/FORECASTING.md). Spec & bootcamp material: [`Forecasting Material/forecasting_agent.md`](./Forecasting%20Material/forecasting_agent.md).
+
 ### Planned (not yet implemented)
 
-- **Forecasting** — time-series projection from `invoice_spend_by_date`. Logic in `lib/invoices/forecasting/`.
 - **ML anomaly detection** — flag charges deviating from historical patterns. Logic in `lib/invoices/anomaly/`.
 
-Both must be implemented as tested pure functions before being wired to the UI.
+Must be implemented as tested pure functions before being wired to the UI.
 
 ---
 
 ## 9. Pricing feature
 
-Lets users estimate carrier shipping costs before sending a package. Stateless — no data persisted per query.
+Lets users estimate UPS shipping costs before sending a package. Stateless — no data persisted per query.
 
 ### Flow
 
-1. User inputs: weight (lbs), dimensions (L × W × H inches), origin zip, destination zip, service type (optional).
-2. `POST /api/pricing/estimate` calls pure rate functions in `lib/pricing/`, returns estimates per carrier.
-3. UI shows side-by-side carrier rate comparison.
+1. User inputs weight, optional dimensions, destination ZIP, service, residential flag, and optional contract discount %.
+2. `POST /api/pricing/estimate` resolves origin ZIP (body override → user profile), loads the appropriate zone chart, calls **`estimateUPS`** in `lib/pricing/ups-estimate.ts`.
+3. Response contains `UPSRateBreakdown`: billable weight, zone, published rate, Net TC, fuel surcharge, residential surcharge, total.
 
-### Types
+### Key types (`lib/pricing/types.ts`)
 
 ```ts
-type ShipmentInput = {
+type UPSService = 'ground' | '3day' | '2day' | 'nda_saver' | 'nda'
+
+type UPSEstimateInput = {
   weightLbs: number
-  dimensionsIn: { length: number; width: number; height: number }
-  originZip: string
+  dimensionsIn?: { length: number; width: number; height: number }
   destinationZip: string
-  serviceType?: string
+  service: UPSService
+  residential: boolean
+  zoneChart: ZoneChart
+  contractDiscountPct?: number  // 0–0.95
 }
 
-type RateEstimate = {
-  carrier: string        // 'UPS' | 'FedEx' | 'WWE'
-  serviceType: string
-  estimatedCost: number
-  currency: 'USD'
-  notes?: string         // e.g. 'dimensional weight applied'
+type UPSRateBreakdown = {
+  billableWeightLbs: number
+  billableWeightSource: 'actual' | 'dimensional'
+  zone: number
+  publishedRate: number
+  contractDiscountPct: number
+  netTransportationCharge: number
+  fuelSurcharge: number
+  residentialSurcharge: number
+  totalEstimatedCharge: number
 }
 ```
 
 ### File locations
 
-- Rate logic: `lib/pricing/estimate.ts`
-- Carrier-specific rules: `lib/pricing/rates/[carrier].ts`
-- UI components: `app/components/pricing/`
-- API route: `app/api/pricing/route.ts`
+- Orchestration: `lib/pricing/ups-estimate.ts`
+- Rate constants + table lookup: `lib/pricing/ups-rates.ts`
+- Zone resolution: `lib/pricing/ups-zone-lookup.ts`
+- Rate data: `lib/pricing/data/ups-rates.json` (2026 UPS Daily Rates)
+- Zone charts: `lib/pricing/data/zone-charts/{prefix}.json`
+- UI form: `app/components/pricing/ups-quote-form.tsx`
+- UI result: `app/components/pricing/rate-result.tsx`
+- API route: `app/api/pricing/estimate/route.ts`
+- Full calculation doc: [`docs/PRICING_CALCULATION.md`](./docs/PRICING_CALCULATION.md)
 
 ---
 
