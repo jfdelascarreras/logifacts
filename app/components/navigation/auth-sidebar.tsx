@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
   { label: 'Home', href: '/home' },
+  { label: 'Upload Invoice', href: '/upload' },
   { label: 'Premium Analysis', href: '/premium-analysis' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Join Panel', href: '/join-panel' },

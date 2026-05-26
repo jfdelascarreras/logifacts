@@ -87,6 +87,9 @@ export async function POST(request: Request) {
     }
   }
 
+  // Cache the analysis against the most recent UPS upload row (if one exists).
+  // FedEx/WWE-only users (no invoice_uploads) skip the upsert — the summary is
+  // returned live and the GET endpoint falls back to a direct compute.
   const {
     data: latestUpload,
     error: latestUploadErr,
@@ -98,27 +101,20 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle()
 
-  if (latestUploadErr || !latestUpload?.id) {
-    return NextResponse.json({ error: latestUploadErr?.message ?? 'No invoice uploads found' }, { status: 404 })
+  if (latestUploadErr) {
+    return NextResponse.json({ error: latestUploadErr.message }, { status: 400 })
   }
 
-  const latestUploadId = latestUpload.id
-
-  // Upsert into analysis table against the most recent upload ID.
-  // We still keep this as a cache row while summary itself is aggregated across all uploads.
-  const { error: upsertError } = await supabase
-    .from('invoice_upload_analyses')
-    .upsert(
-      {
-        user_id: user.id,
-        invoice_upload_id: latestUploadId,
-        summary,
-      },
-      { onConflict: 'invoice_upload_id' }
-    )
-
-  if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 400 })
+  if (latestUpload?.id) {
+    const { error: upsertError } = await supabase
+      .from('invoice_upload_analyses')
+      .upsert(
+        { user_id: user.id, invoice_upload_id: latestUpload.id, summary },
+        { onConflict: 'invoice_upload_id' }
+      )
+    if (upsertError) {
+      return NextResponse.json({ error: upsertError.message }, { status: 400 })
+    }
   }
 
   // Invalidate Redis so the next GET fetches fresh data from Supabase.
@@ -126,7 +122,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json(
     {
-      uploadId: latestUploadId,
+      uploadId: latestUpload?.id,
       uploadsAnalyzed: uploadsCount,
       summary,
       ...(spendSyncWarning ? { spendSyncWarning } : {}),

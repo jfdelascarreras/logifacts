@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { detectCarrier, parseInvoice } from '@/lib/invoices/parsers'
+import { detectCarrierFromBuffer, parseInvoice } from '@/lib/invoices/parsers'
 import { mapInvoiceLines } from '@/lib/invoices/mapping'
 import { redis } from '@/lib/cache/redis'
 
@@ -53,26 +53,22 @@ export async function POST(request: Request) {
   const filename = (file instanceof File ? file.name : 'invoice').replace(/\u0000/g, '')
   const buffer = Buffer.from(await file.arrayBuffer())
 
-  // 1. Detect file format from magic bytes (not just extension)
-  const isXlsx = buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04
-  const isXls  = buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0
-  const isExcel = isXlsx || isXls
+  // 1. Detect carrier from file content (magic bytes + row-1 header scan), filename fallback
+  const detection = await detectCarrierFromBuffer(filename, buffer)
 
-  // 2. Detect carrier
-  const carrier = detectCarrier(filename)
-
-  // UPS invoices must be CSV (250 columns). Reject Excel files early with a helpful message.
-  if (carrier === 'UPS' && isExcel) {
+  if (detection.carrier === null) {
     return NextResponse.json(
       {
         error:
-          'UPS invoices must be uploaded as CSV, not Excel. ' +
-          'In the UPS Billing Center, open My Plan Invoices, click the three-dot menu on the invoice row, ' +
-          'and choose "Download CSV (250 Columns)".',
+          'Could not identify the carrier from this file. ' +
+          'For UPS: upload the CSV (250 Columns) from UPS Billing Center → My Plan Invoices → three-dot menu. ' +
+          'For FedEx or WWE: upload the standard Excel invoice file.',
       },
       { status: 422 }
     )
   }
+
+  const carrier = detection.carrier
 
   // 2. Parse invoice lines
   let lines
