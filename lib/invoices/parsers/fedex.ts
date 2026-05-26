@@ -43,14 +43,18 @@ export function parseFedExWorksheet(
   ws.eachRow((row: ExcelJS.Row, rowNumber: number) => {
     if (rowNumber === 1) return
 
-    const invoiceDate = excelCellStr(row, 1)
-    const invoiceNumber = excelCellStr(row, 2)
-    const netChargeAmount = excelCellRawNum(row, 10)
-    const serviceType = excelCellStr(row, 11)
-    const shipmentDate = excelCellStr(row, 13)
-    const recipientState = excelCellStr(row, 37)
-    const zoneCode = excelCellStr(row, 63)
-    const transportationChargeAmount = excelCellRawNum(row, 9)
+    // Column layout (0-based): A=0 "Consolidated Account Number", B=1 "Bill to Account Number",
+    // C=2 "Invoice Date", D=3 "Invoice Number", … K=10 "Transportation Charge Amount",
+    // L=11 "Net Charge Amount", M=12 "Service Type", O=14 "Shipment Date",
+    // AK=38 "Recipient State", BM=64 "Zone Code".
+    const invoiceDate = excelCellStr(row, 2)
+    const invoiceNumber = excelCellStr(row, 3)
+    const transportationChargeAmount = excelCellRawNum(row, 10)
+    const netChargeAmount = excelCellRawNum(row, 11)
+    const serviceType = excelCellStr(row, 12)
+    const shipmentDate = excelCellStr(row, 14)
+    const recipientState = excelCellStr(row, 38)
+    const zoneCode = excelCellStr(row, 64)
 
     if (!invoiceDate || !invoiceDate.trim()) return
     if (/^invoice\b/i.test(invoiceDate) || /^date\b/i.test(invoiceDate)) return
