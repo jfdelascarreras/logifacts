@@ -3,11 +3,14 @@
 /**
  * Multi-carrier invoice upload panel — used on the Premium Analysis page.
  *
- * Accepts CSV (UPS) and XLS/XLSX (FedEx, WWE) via drag-drop or file picker.
+ * Two-step flow:
+ *   1. User selects files (drag-drop or picker) → files queue as "staged" (not yet uploaded).
+ *   2. User reviews the list, then clicks "Upload [n] file(s)".
+ *   3. After all uploads complete, a "Go to analysis" button navigates to /premium-analysis.
+ *
  * After each successful upload:
- *   1. Calls POST /api/invoices/analyze to recompute the Premium Analysis summary.
- *   2. Dispatches PREMIUM_ANALYSIS_UPDATED so <PremiumDashboard> auto-refreshes.
- *   3. Shows a per-file "View Analysis" button → /dashboard/:invoiceId
+ *   - Calls POST /api/invoices/analyze to recompute the Premium Analysis summary.
+ *   - Dispatches PREMIUM_ANALYSIS_UPDATED so <PremiumDashboard> auto-refreshes.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -31,7 +34,7 @@ interface UploadResult {
 }
 
 type FileStatus =
-  | { state: 'pending' }
+  | { state: 'staged' }
   | { state: 'uploading' }
   | { state: 'analyzing' }
   | { state: 'done'; result: UploadResult }
@@ -50,25 +53,16 @@ const nextId = () => `iup-${++_id}`
 
 function dispatchPremiumUpdate(summary: unknown) {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(
-    new CustomEvent(PREMIUM_ANALYSIS_UPDATED, {
-      detail: { summary },
-    })
-  )
+  window.dispatchEvent(new CustomEvent(PREMIUM_ANALYSIS_UPDATED, { detail: { summary } }))
 }
 
 async function triggerAnalysis(): Promise<void> {
   try {
-    const res = await fetch('/api/invoices/analyze', {
-      method: 'POST',
-      cache: 'no-store',
-    })
+    const res = await fetch('/api/invoices/analyze', { method: 'POST', cache: 'no-store' })
     const json = (await res.json()) as { summary?: unknown }
-    if (res.ok && json.summary) {
-      dispatchPremiumUpdate(json.summary)
-    }
+    if (res.ok && json.summary) dispatchPremiumUpdate(json.summary)
   } catch {
-    // non-fatal — dashboard has a manual Refresh button as fallback
+    // non-fatal — dashboard "Refresh analysis" button is the fallback
   }
 }
 
@@ -78,14 +72,33 @@ export function InvoiceUploadPanel() {
   const router = useRouter()
   const [queue, setQueue] = useState<QueuedFile[]>([])
   const [dragging, setDragging] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [allDone, setAllDone] = useState(false)
   const processingRef = useRef(false)
 
-  function update(id: string, status: FileStatus) {
+  const stagedCount = queue.filter((q) => q.status.state === 'staged').length
+  const hasAnyActive = queue.some(
+    (q) => q.status.state === 'uploading' || q.status.state === 'analyzing'
+  )
+
+  function updateItem(id: string, status: FileStatus) {
     setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status } : q)))
   }
 
+  const stage = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files)
+    if (!arr.length) return
+    setAllDone(false)
+    const newItems: QueuedFile[] = arr.map((file) => ({
+      id: nextId(),
+      file,
+      status: { state: 'staged' },
+    }))
+    setQueue((prev) => [...prev, ...newItems])
+  }, [])
+
   async function uploadOne(item: QueuedFile) {
-    update(item.id, { state: 'uploading' })
+    updateItem(item.id, { state: 'uploading' })
     try {
       const form = new FormData()
       form.append('file', item.file)
@@ -93,53 +106,52 @@ export function InvoiceUploadPanel() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Upload failed')
 
-      const result = json as UploadResult
-      // Mark as analyzing while we recompute the Premium Analysis summary
-      update(item.id, { state: 'analyzing' })
+      updateItem(item.id, { state: 'analyzing' })
       await triggerAnalysis()
-      update(item.id, { state: 'done', result })
+      updateItem(item.id, { state: 'done', result: json as UploadResult })
     } catch (err) {
-      update(item.id, {
+      updateItem(item.id, {
         state: 'error',
         message: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
-  async function processNewItems(items: QueuedFile[]) {
+  async function handleUpload() {
     if (processingRef.current) return
     processingRef.current = true
-    for (const item of items) {
+    setRunning(true)
+    setAllDone(false)
+
+    // Only process items that are currently staged
+    const toProcess = queue.filter((q) => q.status.state === 'staged')
+    for (const item of toProcess) {
       await uploadOne(item)
     }
+
     processingRef.current = false
+    setRunning(false)
+    setAllDone(true)
   }
 
-  function enqueue(files: FileList | File[]) {
-    const arr = Array.from(files)
-    if (!arr.length) return
-    const newItems: QueuedFile[] = arr.map((file) => ({
-      id: nextId(),
-      file,
-      status: { state: 'pending' },
-    }))
-    setQueue((prev) => [...prev, ...newItems])
-    setTimeout(() => processNewItems(newItems), 0)
-  }
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      setDragging(false)
-      if (e.dataTransfer.files.length) enqueue(e.dataTransfer.files)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  )
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    if (e.dataTransfer.files.length) stage(e.dataTransfer.files)
+  }, [stage])
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files?.length) enqueue(e.target.files)
+    if (e.target.files?.length) stage(e.target.files)
     e.target.value = ''
+  }
+
+  function removeStaged(id: string) {
+    setQueue((prev) => prev.filter((q) => q.id !== id))
+  }
+
+  function reset() {
+    setQueue([])
+    setAllDone(false)
   }
 
   return (
@@ -165,10 +177,7 @@ export function InvoiceUploadPanel() {
                 ? 'border-primary bg-primary/5'
                 : 'border-muted-foreground/25 hover:border-primary/50'
             }`}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragging(true)
-            }}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
           >
@@ -198,6 +207,7 @@ export function InvoiceUploadPanel() {
               multiple
               className="hidden"
               onChange={onFileChange}
+              disabled={running}
             />
           </label>
 
@@ -210,18 +220,43 @@ export function InvoiceUploadPanel() {
         </CardContent>
       </Card>
 
-      {/* Per-file results */}
+      {/* Staged + in-progress + done file list */}
       {queue.length > 0 && (
         <div className="space-y-2">
           {queue.map((item) => (
             <FileRow
               key={item.id}
               item={item}
-              onView={(invoiceId) => router.push(`/dashboard/${invoiceId}`)}
+              onRemove={removeStaged}
+              onView={(id) => router.push(`/dashboard/${id}`)}
+              disabled={running}
             />
           ))}
-          <div className="flex justify-end pt-1">
-            <Button variant="outline" size="sm" onClick={() => setQueue([])}>
+
+          {/* Action bar */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {/* Upload button — only while there are staged files */}
+            {stagedCount > 0 && !allDone && (
+              <Button onClick={() => void handleUpload()} disabled={running || hasAnyActive}>
+                {running
+                  ? 'Uploading…'
+                  : `Upload ${stagedCount} file${stagedCount !== 1 ? 's' : ''}`}
+              </Button>
+            )}
+
+            {/* Go to analysis — shown once every file is settled */}
+            {allDone && stagedCount === 0 && (
+              <Button onClick={() => router.push('/premium-analysis')}>
+                Go to analysis ↓
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={reset}
+              disabled={running || hasAnyActive}
+            >
               Clear all
             </Button>
           </div>
@@ -231,16 +266,20 @@ export function InvoiceUploadPanel() {
   )
 }
 
-// ── FileRow sub-component ─────────────────────────────────────────────────────
+// ── FileRow ───────────────────────────────────────────────────────────────────
 
 function FileRow({
   item,
+  onRemove,
   onView,
+  disabled,
 }: {
   item: QueuedFile
+  onRemove: (id: string) => void
   onView: (invoiceId: string) => void
+  disabled: boolean
 }) {
-  const { file, status } = item
+  const { id, file, status } = item
 
   return (
     <Card>
@@ -248,7 +287,7 @@ function FileRow({
         <div className="flex items-start gap-3">
           {/* Status icon */}
           <div className="mt-0.5 flex-shrink-0 w-5 flex justify-center">
-            {status.state === 'pending' && (
+            {status.state === 'staged' && (
               <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30" />
             )}
             {(status.state === 'uploading' || status.state === 'analyzing') && (
@@ -265,8 +304,8 @@ function FileRow({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{file.name}</p>
 
-            {status.state === 'pending' && (
-              <p className="text-xs text-muted-foreground mt-0.5">Queued…</p>
+            {status.state === 'staged' && (
+              <p className="text-xs text-muted-foreground mt-0.5">Ready to upload</p>
             )}
             {status.state === 'uploading' && (
               <p className="text-xs text-muted-foreground mt-0.5">Parsing and mapping charge lines…</p>
@@ -299,10 +338,7 @@ function FileRow({
                   <span>
                     <span className="text-muted-foreground">Amount </span>
                     <span className="font-semibold">
-                      $
-                      {status.result.totalAmount.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                      })}
+                      ${status.result.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </span>
                 </div>
@@ -312,6 +348,21 @@ function FileRow({
               </div>
             )}
           </div>
+
+          {/* Remove button — only for staged files */}
+          {status.state === 'staged' && (
+            <button
+              type="button"
+              onClick={() => onRemove(id)}
+              disabled={disabled}
+              aria-label={`Remove ${file.name}`}
+              className="mt-0.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -325,21 +376,18 @@ const CARRIER_CHIPS = [
     carrier: 'UPS',
     format: 'CSV',
     hint: '250-column export',
-    color:
-      'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200',
+    color: 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200',
   },
   {
     carrier: 'FedEx',
     format: 'XLS / XLSX',
     hint: 'Standard invoice export',
-    color:
-      'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-200',
+    color: 'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-200',
   },
   {
     carrier: 'WWE',
     format: 'XLS / XLSX',
     hint: 'World Wide Express',
-    color:
-      'bg-purple-50 border-purple-200 text-purple-800 dark:bg-purple-950 dark:border-purple-800 dark:text-purple-200',
+    color: 'bg-purple-50 border-purple-200 text-purple-800 dark:bg-purple-950 dark:border-purple-800 dark:text-purple-200',
   },
 ] as const
