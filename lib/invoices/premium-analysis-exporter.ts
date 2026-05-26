@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Excel workbook for Premium Analysis (invoice_uploads aggregate).
  */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const ExcelJSMod = (() => {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('exceljs')
   } catch {
     return null

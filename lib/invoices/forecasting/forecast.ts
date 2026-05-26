@@ -1,5 +1,5 @@
 import type { ForecastSpendOptions, FuelForecastResult, FuelScenarios, ScenarioForecastPoint, SpendObservation } from './types'
-import { extractBaseFreightSeries, nextMonthPeriods } from './series'
+import { extractBaseFreightSeries } from './series'
 import { mape, trainHoldoutSplit } from './metrics'
 import { predictMean, predictLastValue, predictSeasonalNaive } from './baselines'
 

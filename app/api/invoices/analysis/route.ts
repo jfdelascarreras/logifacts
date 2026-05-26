@@ -35,23 +35,6 @@ function parseFilters(url: URL): AnalysisFilters {
   return filters
 }
 
-function applyFilters(lines: InvoiceLine[], filters: AnalysisFilters): InvoiceLine[] {
-  return lines.filter((line) => {
-    if (filters.carrier?.length && !filters.carrier.includes(line.carrier)) return false
-    if (filters.standardized_charge?.length && (!line.standardized_charge || !filters.standardized_charge.includes(line.standardized_charge))) return false
-    if (filters.category_1?.length && (!line.category_1 || !filters.category_1.includes(line.category_1))) return false
-    if (filters.category_2?.length && (!line.category_2 || !filters.category_2.includes(line.category_2))) return false
-    if (filters.zone?.length && (!line.zone || !filters.zone.includes(line.zone))) return false
-    if (filters.destination_state?.length && (!line.destination_state || !filters.destination_state.includes(line.destination_state))) return false
-    if (filters.mapped !== undefined && line.mapped !== filters.mapped) return false
-    if (filters.shipment_date_range) {
-      const [from, to] = filters.shipment_date_range
-      if (from && line.shipment_date && line.shipment_date < from) return false
-      if (to && line.shipment_date && line.shipment_date > to) return false
-    }
-    return true
-  })
-}
 
 export async function GET(request: Request) {
   const supabase = await createClient()

@@ -18,7 +18,7 @@ function buildQuery(invoiceId: string, filters: AnalysisFilters): string {
   filters.carrier?.forEach((c) => params.append('carrier', c))
   filters.standardized_charge?.forEach((c) => params.append('standardized_charge', c))
   filters.category_1?.forEach((c) => params.append('category_1', c))
-  filters.mapped !== undefined && params.set('mapped', String(filters.mapped))
+  if (filters.mapped !== undefined) params.set('mapped', String(filters.mapped))
   return `/api/invoices/analysis?${params.toString()}`
 }
 

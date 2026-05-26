@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Excel export via ExcelJS.
  * Three sheets:
@@ -12,20 +12,13 @@
 const ExcelJSMod = (() => { try { return require('exceljs') } catch { return null } })()
 import type { InvoiceLine } from '@/types/invoice'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function addHeaderRow(ws: any, columns: string[]) {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const row = ws.addRow(columns)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   row.eachCell((cell: any) => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12284B' } }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     cell.alignment = { vertical: 'middle', horizontal: 'center' }
   })
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   row.height = 20
 }
 
@@ -38,15 +31,11 @@ const LINE_COLUMNS = [
 
 export async function generateInvoiceExcel(lines: InvoiceLine[]): Promise<Buffer> {
   if (!ExcelJSMod) throw new Error('ExcelJS not installed. Run: pnpm add exceljs')
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   const workbook = new ExcelJSMod.Workbook()
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   workbook.creator = 'Logifacts'
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   workbook.created = new Date()
 
   // Sheet 1: Mapped Lines
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const mappedSheet = workbook.addWorksheet('Mapped Lines')
   mappedSheet.columns = LINE_COLUMNS.map((key) => ({
     header: key,
@@ -58,11 +47,9 @@ export async function generateInvoiceExcel(lines: InvoiceLine[]): Promise<Buffer
   mappedSheet.spliceRows(1, 1)
 
   const mapped = lines.filter((l) => l.mapped)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   mapped.forEach((line) => mappedSheet.addRow(LINE_COLUMNS.map((k) => (line as unknown as Record<string, unknown>)[k] ?? '')))
 
   // Sheet 2: Summary Pivot
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const summarySheet = workbook.addWorksheet('Summary by Charge')
   summarySheet.columns = [
     { header: 'Standardized Charge', key: 'standardized_charge', width: 35 },
@@ -98,7 +85,6 @@ export async function generateInvoiceExcel(lines: InvoiceLine[]): Promise<Buffer
     })
 
   // Sheet 3: Unmatched
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const unmatchedSheet = workbook.addWorksheet('Unmatched Charges')
   unmatchedSheet.columns = LINE_COLUMNS.map((key) => ({
     header: key,
@@ -109,16 +95,12 @@ export async function generateInvoiceExcel(lines: InvoiceLine[]): Promise<Buffer
   addHeaderRow(unmatchedSheet, LINE_COLUMNS.map((k) => k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())))
 
   const unmatched = lines.filter((l) => !l.mapped)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   unmatched.forEach((line) => unmatchedSheet.addRow(LINE_COLUMNS.map((k) => (line as unknown as Record<string, unknown>)[k] ?? '')))
 
   // Format charge_amount columns as currency
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   ;[mappedSheet, unmatchedSheet].forEach((ws: any) => { ws.getColumn('charge_amount').numFmt = '$#,##0.00' })
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   summarySheet.getColumn('total_amount').numFmt = '$#,##0.00'
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   const arrayBuffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(arrayBuffer as ArrayBuffer)
 }

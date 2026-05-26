@@ -28,14 +28,17 @@ export function CarrierBreakdown({ lines }: Props) {
 
   const totalSpend = data.reduce((s, d) => s + d.amount, 0)
 
-  // Build conic-gradient segments
-  let cumulativePct = 0
-  const segments = data.map((d) => {
-    const color = CARRIER_COLORS[d.carrier] ?? '#6b7280'
-    const start = cumulativePct
-    cumulativePct += d.pct
-    return `${color} ${start.toFixed(1)}% ${cumulativePct.toFixed(1)}%`
-  })
+  // Build conic-gradient segments — accumulate with reduce to avoid mutation
+  const segments = useMemo(() =>
+    data.reduce<{ acc: number; parts: string[] }>(
+      ({ acc, parts }, d) => {
+        const color = CARRIER_COLORS[d.carrier] ?? '#6b7280'
+        const next = acc + d.pct
+        return { acc: next, parts: [...parts, `${color} ${acc.toFixed(1)}% ${next.toFixed(1)}%`] }
+      },
+      { acc: 0, parts: [] }
+    ).parts
+  , [data])
 
   return (
     <Card>

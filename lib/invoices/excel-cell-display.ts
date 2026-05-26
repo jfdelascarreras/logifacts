@@ -10,7 +10,6 @@ export function excelCellAsDisplayString(cell: any): string {
   const textRaw = typeof cell.text === 'string' ? cell.text.trim() : ''
   if (textRaw.length > 0) return textRaw.replace(/\u00a0/g, ' ').trim()
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
   const v = cell.value
   if (v === null || v === undefined) return ''
   if (typeof v === 'string') return v.trim()
@@ -18,12 +17,9 @@ export function excelCellAsDisplayString(cell: any): string {
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE'
 
   if (typeof v === 'number' && Number.isFinite(v)) {
-    // Prefer fixed decimal-ish rendering over `String(n)` exponential form.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const nf = typeof cell.numFmt === 'string' ? cell.numFmt : ''
     if (/0{3,}|@/.test(nf)) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const s = typeof cell.result === 'string' ? cell.result : ''
         const t = String(s).trim()
         if (t) return t

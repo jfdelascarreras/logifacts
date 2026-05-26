@@ -23,7 +23,6 @@ function sanitizeRow<T extends Record<string, unknown>>(row: T): T {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(row)) {
     if (typeof v === 'string') {
-      // eslint-disable-next-line no-control-regex
       out[k] = v.replace(/\u0000/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '')
     } else {
       out[k] = v

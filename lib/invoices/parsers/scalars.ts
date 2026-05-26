@@ -7,7 +7,6 @@ export function toNum(v: string | null | undefined): number {
 
 /** Strip null bytes and other control characters Postgres rejects in text columns. */
 export function cleanText(v: string | null | undefined): string {
-  // eslint-disable-next-line no-control-regex
   return String(v ?? '')
     .replace(/\u0000/g, '')
     .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '')

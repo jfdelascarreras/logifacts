@@ -417,7 +417,7 @@ function lookupChargeTaxonomy(
   const descNorm = normalizeMappingText(chargeDescriptionRaw)
   if (!descNorm) return undefined
 
-  let carrierLookup = invoiceCarrierPremiumKey(invoiceCarrierRaw)
+  const carrierLookup = invoiceCarrierPremiumKey(invoiceCarrierRaw)
 
   let mapped = lookup.get(`${carrierLookup}\t${descNorm}`)
   if (!mapped && carrierLookup !== 'UPS') {
@@ -589,7 +589,6 @@ export function computeInvoiceAnalysisSummary(
       rec['Carrier Name'] ?? '',
       chargeDescription
     )
-    const category1 = normalizeMappingText(mapping?.category_1)
     const category2 = normalizeMappingText(mapping?.category_2)
     const category3 = normalizeMappingText(mapping?.category_3)
     const category2Label = category2 || 'UNMAPPED'

@@ -195,11 +195,9 @@ export function CostForecastCard({ monthlySpend, isFiltered }: Props) {
       : result?.scenarios.current.forecast ?? []
 
   const allPoints = result ? buildChartPoints(result.history, activeForecast) : []
-  const joinIdx = result ? result.history.length - 1 : -1
 
   // Scale
   const allTotalCosts = allPoints.map((p) => p.totalCost)
-  const allFuelCosts = allPoints.map((p) => p.fuelCost)
   const yMax = Math.max(...allTotalCosts, 1) * 1.15
   const yMin = 0
   const toX = (i: number) => ML + (i / Math.max(allPoints.length - 1, 1)) * CW
