@@ -1,0 +1,106 @@
+{
+  "_meta": {
+    "effectiveDate": "2025-12-22",
+    "source": "UPS 2026 Rate and Service Guide — Revised Rates for Value-Added Services and Other Charges",
+    "sourceFile": "sources/preview-accessorial-us-en.pdf",
+    "notes": [
+      "All rates are LIST (published) rates. Apply shipper contract discount before using.",
+      "Fuel surcharge is NOT here — it is a weekly variable rate in ups-fuel-surcharge-history.json.",
+      "Zone-tiered charges use base zone (2–8). Air encoded zones (102, 202, 302…) resolve to base = zone % 100.",
+      "Territory zones (44=AK, 45=HI/PR, 46=other) are treated as zone 8 for tiered lookups."
+    ]
+  },
+
+  "residentialSurcharge": {
+    "_note": "Applied when residential=true. Use ground rate for UPS Ground; air rate for all air services.",
+    "ground": 6.50,
+    "air": 7.00
+  },
+
+  "addressCorrection": {
+    "_note": "Post-shipment charge; include in estimate when flag is set.",
+    "air": 25.25,
+    "ground": 25.25,
+    "maxPerShipment": 175.25
+  },
+
+  "deliveryAreaSurcharge": {
+    "_note": "Applied when destination ZIP is in a DAS zone (see das-zips.json). Key = dasType + commercial/residential + ground/air.",
+    "groundCommercial":          4.50,
+    "groundCommercialExtended":  5.70,
+    "groundResidential":         6.55,
+    "groundResidentialExtended": 8.85,
+    "airCommercial":             4.50,
+    "airCommercialExtended":     5.70,
+    "airResidential":            6.55,
+    "airResidentialExtended":    8.85
+  },
+
+  "largePackageSurcharge": {
+    "_note": "Applied when package exceeds UPS Large Package thresholds (length > 96 in OR length+girth > 130 in). Zone-tiered by base zone.",
+    "commercial": [
+      { "zoneMin": 2, "zoneMax": 2, "rate": 219.50 },
+      { "zoneMin": 3, "zoneMax": 4, "rate": 239.50 },
+      { "zoneMin": 5, "zoneMax": 6, "rate": 273.00 },
+      { "zoneMin": 7, "zoneMax": 99, "rate": 286.00 }
+    ],
+    "residential": [
+      { "zoneMin": 2, "zoneMax": 2, "rate": 254.50 },
+      { "zoneMin": 3, "zoneMax": 4, "rate": 274.50 },
+      { "zoneMin": 5, "zoneMax": 6, "rate": 320.50 },
+      { "zoneMin": 7, "zoneMax": 99, "rate": 331.00 }
+    ]
+  },
+
+  "additionalHandling": {
+    "_note": "Only the highest-triggering subtype is charged per package (weight > dimensions > packaging). Zone-tiered by base zone.",
+    "weight": [
+      { "zoneMin": 2, "zoneMax": 2, "rate": 46.50 },
+      { "zoneMin": 3, "zoneMax": 4, "rate": 50.75 },
+      { "zoneMin": 5, "zoneMax": 6, "rate": 56.25 },
+      { "zoneMin": 7, "zoneMax": 99, "rate": 58.75 }
+    ],
+    "dimensions": [
+      { "zoneMin": 2, "zoneMax": 2, "rate": 30.00 },
+      { "zoneMin": 3, "zoneMax": 4, "rate": 33.25 },
+      { "zoneMin": 5, "zoneMax": 6, "rate": 38.50 },
+      { "zoneMin": 7, "zoneMax": 99, "rate": 40.50 }
+    ],
+    "packaging": [
+      { "zoneMin": 2, "zoneMax": 2, "rate": 26.75 },
+      { "zoneMin": 3, "zoneMax": 4, "rate": 31.00 },
+      { "zoneMin": 5, "zoneMax": 6, "rate": 33.25 },
+      { "zoneMin": 7, "zoneMax": 99, "rate": 33.75 }
+    ]
+  },
+
+  "remoteAreaSurcharge": {
+    "_note": "Applied when destination ZIP is a remote area (see remote-zips.json). Key = remote type from that file.",
+    "alaska": 46.25,
+    "hawaii": 16.50,
+    "us48":   16.50
+  },
+
+  "declaredValue": {
+    "_note": "Applied when declaredValueDollars > 0. Charge = max(minimum, declaredValueDollars / 100 * ratePerHundred).",
+    "ratePerHundred": 1.70,
+    "minimum": 5.11
+  },
+
+  "saturdayDelivery": {
+    "_note": "TODO — rate not present in accessorial sheet. Sourced separately from UPS Rate and Service Guide per-service section.",
+    "nda": null,
+    "nda_saver": null,
+    "2day": null
+  },
+
+  "smallBusiness": {
+    "_note": "UPS Small Business program rates (2026, eff. 2026-01-26). Source: small-business-rate-guide-us-en.pdf. Waived: fuel surcharge, DAS (domestic), Remote Area US-48, Additional Handling, Large Package Surcharge, Address Correction. Contract discounts not applicable.",
+    "residentialSurcharge": {
+      "ground": 3.55,
+      "air": 4.00
+    },
+    "dimDivisor": 166,
+    "dimThresholdCubicIn": 864
+  }
+}

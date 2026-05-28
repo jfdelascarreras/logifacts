@@ -298,7 +298,7 @@ type UPSRateBreakdown = {
 - Rate constants + table lookup: `lib/pricing/ups-rates.ts`
 - Zone resolution: `lib/pricing/ups-zone-lookup.ts`
 - Rate data: `lib/pricing/data/ups-rates.json` (2026 UPS Daily Rates)
-- Zone charts: `lib/pricing/data/zone-charts/{prefix}.json`
+- Zone charts: `ups_zone_charts/{prefix}.xls` (source) → `lib/pricing/data/zone-charts/{prefix}.json` via `scripts/convert-ups-data.ts`
 - UI form: `app/components/pricing/ups-quote-form.tsx`
 - UI result: `app/components/pricing/rate-result.tsx`
 - API route: `app/api/pricing/estimate/route.ts`

@@ -16,18 +16,32 @@ type Props = { breakdown: UPSRateBreakdown }
 
 export function RateResult({ breakdown: b }: Props) {
   const {
+    rateType,
     service,
     billableWeightLbs,
     billableWeightSource,
     dimWeightLbs,
     zone,
     publishedRate,
-    contractDiscountPct,
+    contractDiscounts,
     netTransportationCharge,
+    fuelSurchargeRate,
     fuelSurcharge,
     residentialSurcharge,
+    dasSurchargeType,
+    dasSurcharge,
+    largePackageSurcharge,
+    additionalHandlingTrigger,
+    additionalHandlingSurcharge,
+    remoteAreaType,
+    remoteAreaSurcharge,
+    declaredValueCharge,
+    addressCorrectionCharge,
     totalEstimatedCharge,
   } = b
+
+  const isSB = rateType === 'smallBusiness'
+  const transportationDiscount = contractDiscounts.transportation
 
   return (
     <div className="space-y-4">
@@ -35,9 +49,16 @@ export function RateResult({ breakdown: b }: Props) {
       <div className="rounded-lg border bg-card overflow-hidden">
         <div className="flex items-start justify-between p-5 bg-muted/30">
           <div>
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-1">
-              Estimated Total
-            </p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Estimated Total
+              </p>
+              {isSB && (
+                <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wide">
+                  Small Business
+                </span>
+              )}
+            </div>
             <p className="text-4xl font-bold tabular-nums text-green-500">
               {fmt(totalEstimatedCharge)}
             </p>
@@ -66,8 +87,14 @@ export function RateResult({ breakdown: b }: Props) {
         {/* Discount chips */}
         <div className="grid grid-cols-2 gap-px bg-border">
           {[
-            { label: 'Contract Discount', value: contractDiscountPct > 0 ? pct(contractDiscountPct) : 'None' },
-            { label: 'Fuel Surcharge', value: '17.2%' },
+            {
+              label: 'Contract Discount',
+              value: isSB ? 'N/A' : (transportationDiscount > 0 ? pct(transportationDiscount) : 'None'),
+            },
+            {
+              label: 'Fuel Surcharge',
+              value: isSB ? 'Waived' : pct(fuelSurchargeRate),
+            },
           ].map(({ label, value }) => (
             <div key={label} className="bg-card p-3">
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -85,9 +112,9 @@ export function RateResult({ breakdown: b }: Props) {
           </p>
           {[
             { label: 'Published List Rate', value: fmt(publishedRate), className: '' },
-            ...(contractDiscountPct > 0 ? [{
-              label: `Contract Discount (${pct(contractDiscountPct)})`,
-              value: `−${fmt(publishedRate * contractDiscountPct)}`,
+            ...(transportationDiscount > 0 ? [{
+              label: `Contract Discount (${pct(transportationDiscount)})`,
+              value: `−${fmt(publishedRate * transportationDiscount)}`,
               className: 'text-red-400',
             }] : []),
           ].map(({ label, value, className }) => (
@@ -102,13 +129,56 @@ export function RateResult({ breakdown: b }: Props) {
             <span className="font-mono text-green-500">{fmt(netTransportationCharge)}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-border text-sm">
-            <span className="text-muted-foreground">Fuel Surcharge (est. 17.2%)</span>
+            <span className="text-muted-foreground">Fuel Surcharge ({pct(fuelSurchargeRate)})</span>
             <span className="font-mono text-amber-500">+{fmt(fuelSurcharge)}</span>
           </div>
           {residentialSurcharge > 0 && (
             <div className="flex justify-between py-1 border-b border-border text-sm">
               <span className="text-muted-foreground">Residential Surcharge</span>
               <span className="font-mono text-amber-500">+{fmt(residentialSurcharge)}</span>
+            </div>
+          )}
+          {dasSurcharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">
+                Delivery Area Surcharge{dasSurchargeType === 'extended' ? ' — Extended' : ''}
+              </span>
+              <span className="font-mono text-amber-500">+{fmt(dasSurcharge)}</span>
+            </div>
+          )}
+          {largePackageSurcharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">Large Package Surcharge</span>
+              <span className="font-mono text-amber-500">+{fmt(largePackageSurcharge)}</span>
+            </div>
+          )}
+          {additionalHandlingSurcharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">
+                Additional Handling
+                {additionalHandlingTrigger ? ` (${additionalHandlingTrigger})` : ''}
+              </span>
+              <span className="font-mono text-amber-500">+{fmt(additionalHandlingSurcharge)}</span>
+            </div>
+          )}
+          {remoteAreaSurcharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">
+                Remote Area Surcharge ({remoteAreaType === 'alaska' ? 'Alaska' : 'Hawaii'})
+              </span>
+              <span className="font-mono text-amber-500">+{fmt(remoteAreaSurcharge)}</span>
+            </div>
+          )}
+          {declaredValueCharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">Declared Value</span>
+              <span className="font-mono text-amber-500">+{fmt(declaredValueCharge)}</span>
+            </div>
+          )}
+          {addressCorrectionCharge > 0 && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">Address Correction</span>
+              <span className="font-mono text-amber-500">+{fmt(addressCorrectionCharge)}</span>
             </div>
           )}
           <div className="flex justify-between py-2 text-sm font-semibold border-t border-primary/30 mt-1">
@@ -136,7 +206,10 @@ export function RateResult({ breakdown: b }: Props) {
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Published list rates are 2026 UPS Daily Rates. Fuel surcharge varies weekly. All figures are estimates.
+        {isSB
+          ? 'Rates are 2026 UPS Small Business Rates (eff. Jan 26, 2026). No fuel surcharge, DAS, AH, LPS, or address correction in SB program.'
+          : 'Published list rates are 2026 UPS Daily Rates. Fuel surcharge varies weekly. All figures are estimates.'
+        }
       </p>
     </div>
   )

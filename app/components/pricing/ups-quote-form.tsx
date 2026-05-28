@@ -7,11 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { UPS_SERVICE_LABELS } from '@/lib/pricing'
-import type { UPSRateBreakdown, UPSService } from '@/lib/pricing'
+import type { UPSRateBreakdown, UPSRateType, UPSService } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
 import { RateResult } from './rate-result'
 
-const SERVICES: UPSService[] = ['ground', '3day', '2day', 'nda_saver', 'nda']
+const SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
 
 type Props = { defaultOriginZip?: string }
 
@@ -23,8 +23,11 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
   const [originZip, setOriginZip] = useState(defaultOriginZip)
   const [destinationZip, setDestinationZip] = useState('')
   const [service, setService] = useState<UPSService>('ground')
+  const [rateType, setRateType] = useState<UPSRateType>('daily')
   const [residential, setResidential] = useState(false)
-  const [contractDiscount, setContractDiscount] = useState('')
+  const [nonStandardPackaging, setNonStandardPackaging] = useState(false)
+  const [addressCorrection, setAddressCorrection] = useState(false)
+  const [declaredValue, setDeclaredValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<UPSRateBreakdown | null>(null)
@@ -46,9 +49,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
 
     setLoading(true)
     try {
-      const discountPct = contractDiscount ? parseFloat(contractDiscount) / 100 : undefined
-
-    const res = await fetch('/api/pricing/estimate', {
+      const res = await fetch('/api/pricing/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -57,8 +58,11 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
           originZip,
           destinationZip,
           service,
+          rateType,
           residential,
-          ...(discountPct !== undefined ? { contractDiscountPct: discountPct } : {}),
+          nonStandardPackaging,
+          addressCorrection,
+          declaredValueDollars: declaredValue ? parseFloat(declaredValue) : 0,
         }),
       })
       const data = await res.json() as { breakdown?: UPSRateBreakdown; error?: string }
@@ -150,6 +154,32 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
               </div>
             </div>
 
+            {/* Rate type */}
+            <div className="space-y-1.5">
+              <Label>Rate Program</Label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'daily', label: 'Daily Rates', desc: 'Negotiated contract rates' },
+                  { value: 'smallBusiness', label: 'Small Business', desc: 'UPS Small Business program' },
+                ] as { value: UPSRateType; label: string; desc: string }[]).map(({ value, label, desc }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRateType(value)}
+                    className={cn(
+                      'flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                      rateType === value
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                    )}
+                  >
+                    <span className="font-medium block">{label}</span>
+                    <span className="text-xs opacity-70">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Service selector */}
             <div className="space-y-1.5">
               <Label>Service</Label>
@@ -198,25 +228,76 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
               </div>
             </div>
 
-            {/* Contract discount */}
+            {/* Non-standard packaging */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={nonStandardPackaging}
+                onClick={() => setNonStandardPackaging(v => !v)}
+                className={cn(
+                  'h-5 w-5 rounded border-2 flex items-center justify-center transition-colors shrink-0',
+                  nonStandardPackaging
+                    ? 'border-primary bg-primary/20'
+                    : 'border-border bg-muted/30'
+                )}
+              >
+                {nonStandardPackaging && <span className="text-primary text-xs font-bold">✓</span>}
+              </button>
+              <div>
+                <p className="text-sm font-medium leading-none">Non-standard packaging</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Bags, shrink wrap, tires, unstable items — triggers additional handling</p>
+              </div>
+            </div>
+
+            {/* Address correction */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={addressCorrection}
+                onClick={() => setAddressCorrection(v => !v)}
+                className={cn(
+                  'h-5 w-5 rounded border-2 flex items-center justify-center transition-colors shrink-0',
+                  addressCorrection
+                    ? 'border-primary bg-primary/20'
+                    : 'border-border bg-muted/30'
+                )}
+              >
+                {addressCorrection && <span className="text-primary text-xs font-bold">✓</span>}
+              </button>
+              <div>
+                <p className="text-sm font-medium leading-none">Address correction</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Post-shipment charge when UPS corrects an invalid address</p>
+              </div>
+            </div>
+
+            {/* Declared value */}
             <div className="space-y-1.5">
-              <Label htmlFor="discount">Contract Discount % <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="declared-value">Declared Value <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <div className="relative w-40">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">$</span>
                 <Input
-                  id="discount"
+                  id="declared-value"
                   type="number"
                   min="0"
-                  max="95"
-                  step="0.1"
-                  placeholder="e.g. 52"
-                  value={contractDiscount}
-                  onChange={e => setContractDiscount(e.target.value)}
-                  className="pr-7"
+                  step="1"
+                  placeholder="0"
+                  value={declaredValue}
+                  onChange={e => setDeclaredValue(e.target.value)}
+                  className="pl-6"
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
               </div>
-              <p className="text-xs text-muted-foreground">Leave blank to see UPS published list rates with no discounts applied.</p>
+              <p className="text-xs text-muted-foreground">$1.70 per $100, minimum $5.11. Leave blank for no coverage.</p>
             </div>
+
+            {/* Contract discounts */}
+            <p className="text-xs text-muted-foreground">
+              Contract discounts from your profile are applied automatically.{' '}
+              <a href="/protected" className="underline underline-offset-2 hover:text-foreground">
+                Edit in My Profile →
+              </a>
+            </p>
 
             {error && (
               <p className="text-sm text-destructive font-mono">{error}</p>
