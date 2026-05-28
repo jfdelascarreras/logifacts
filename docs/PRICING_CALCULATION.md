@@ -1,6 +1,6 @@
 # UPS Rate Calculator — Sources & Output
 
-This document describes **every data source, input field, calculation step, and output field** for the UPS rate estimator.
+This document describes **every data source, input field, calculation step, and output field** for the UPS rate estimator. For a plain-language guide on how to use the calculator, see [PRICING_USER_GUIDE.md](./PRICING_USER_GUIDE.md).
 
 Scope: `POST /api/pricing/estimate` → `estimateUPS()` → `UPSRateBreakdown`.
 
@@ -83,6 +83,7 @@ All input data lives in `lib/pricing/data/`. None of it is hardcoded in the appl
 | `declaredValueDollars` | `number` | No | Declared value in dollars. `0` or omitted = no coverage. |
 | `addressCorrection` | `boolean` | No | Include post-shipment address correction charge in the estimate. |
 | `contractDiscounts` | `ContractDiscounts` | No | Per-field override of profile discounts. Profile discounts are the default; body discounts win per-field. |
+| *(UI only)* `markupPct` | `number` | No | Percentage margin added on top of `totalEstimatedCharge` to produce a client-facing price. Not sent to the API — computed client-side in `rate-result.tsx`. |
 
 `ContractDiscounts` shape (all fields optional, fraction 0–0.95):
 ```typescript
@@ -333,6 +334,17 @@ Every successful call returns this object:
 | `addressCorrectionCharge` | `number` | $0 if not flagged |
 | `totalEstimatedCharge` | `number` | Sum of all charges above |
 
+### Customer price (UI-only, not in API response)
+
+Computed in `rate-result.tsx` when the user enters a markup percentage in the form:
+
+```
+markupAmount  = totalEstimatedCharge × (markupPct / 100)
+customerPrice = totalEstimatedCharge + markupAmount
+```
+
+Neither value is returned by the API or stored anywhere — they are derived in the browser from the breakdown and the form input.
+
 ---
 
 ## Worked example
@@ -355,6 +367,14 @@ Every successful call returns this object:
 | Declared value | $0 |
 | Address correction | $0 |
 | **Total** | **$14.97** |
+
+With a **20% mark up** entered in the form:
+
+| | |
+|---|---|
+| Your cost (UPS) | $14.97 |
+| Mark Up (20%) | +$2.99 |
+| **Bill to Client** | **$17.96** |
 
 ---
 

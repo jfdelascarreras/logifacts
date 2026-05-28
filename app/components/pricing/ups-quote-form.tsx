@@ -28,6 +28,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
   const [nonStandardPackaging, setNonStandardPackaging] = useState(false)
   const [addressCorrection, setAddressCorrection] = useState(false)
   const [declaredValue, setDeclaredValue] = useState('')
+  const [markupPct, setMarkupPct] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<UPSRateBreakdown | null>(null)
@@ -291,6 +292,25 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
               <p className="text-xs text-muted-foreground">$1.70 per $100, minimum $5.11. Leave blank for no coverage.</p>
             </div>
 
+            {/* Mark up */}
+            <div className="space-y-1.5">
+              <Label htmlFor="markup">Mark Up <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <div className="relative w-40">
+                <Input
+                  id="markup"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="e.g. 15"
+                  value={markupPct}
+                  onChange={e => setMarkupPct(e.target.value)}
+                  className="pr-7"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Added on top of your UPS cost to get the price you bill the client.</p>
+            </div>
+
             {/* Contract discounts */}
             <p className="text-xs text-muted-foreground">
               Contract discounts from your profile are applied automatically.{' '}
@@ -310,7 +330,12 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
         </CardContent>
       </Card>
 
-      {result && <RateResult breakdown={result} />}
+      {result && (
+        <RateResult
+          breakdown={result}
+          markupPct={markupPct ? parseFloat(markupPct) : undefined}
+        />
+      )}
     </div>
   )
 }

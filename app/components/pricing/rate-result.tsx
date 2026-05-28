@@ -12,9 +12,9 @@ function pct(n: number) {
   return `${(n * 100).toFixed(1)}%`
 }
 
-type Props = { breakdown: UPSRateBreakdown }
+type Props = { breakdown: UPSRateBreakdown; markupPct?: number }
 
-export function RateResult({ breakdown: b }: Props) {
+export function RateResult({ breakdown: b, markupPct }: Props) {
   const {
     rateType,
     service,
@@ -187,6 +187,35 @@ export function RateResult({ breakdown: b }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Customer price (markup) */}
+      {markupPct != null && markupPct > 0 && (() => {
+        const markupAmount = totalEstimatedCharge * (markupPct / 100)
+        const customerPrice = totalEstimatedCharge + markupAmount
+        return (
+          <div className="rounded-lg border border-primary/40 bg-card overflow-hidden">
+            <div className="px-4 py-3 bg-primary/10 border-b border-primary/20">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-primary">
+                Customer Price — {markupPct}% Mark Up
+              </p>
+            </div>
+            <div className="p-4 space-y-1">
+              <div className="flex justify-between py-1 border-b border-border text-sm">
+                <span className="text-muted-foreground">Your Cost (UPS)</span>
+                <span className="font-mono">{fmt(totalEstimatedCharge)}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-border text-sm">
+                <span className="text-muted-foreground">Mark Up ({markupPct}%)</span>
+                <span className="font-mono text-amber-500">+{fmt(markupAmount)}</span>
+              </div>
+              <div className="flex justify-between py-2 text-base font-bold border-t border-primary/30 mt-1">
+                <span className="text-primary">Bill to Client</span>
+                <span className="font-mono text-primary text-xl">{fmt(customerPrice)}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Accessorial reference */}
       <div className="rounded-lg border bg-card p-4">
