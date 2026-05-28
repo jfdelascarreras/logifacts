@@ -65,7 +65,7 @@ Milestones are implemented sequentially via `/implement [N]`. Each entry is the 
 
 ## M-2: Live UPS Fuel Surcharge
 
-**Status:** not implemented
+**Status:** implemented
 **Area:** pricing
 **Goal:** Replace the hardcoded 17.2% fuel surcharge estimate with the actual weekly rate published by UPS, so cost estimates reflect real invoice charges.
 
@@ -98,4 +98,4 @@ UPS publishes updated daily rates and occasionally redraws zone boundaries at th
 5. Run `pnpm test` to confirm the rate spot-checks still pass (update expected values in `lib/pricing/ups-estimate.test.ts` if rates changed)
 6. Commit and deploy
 
-**Fuel surcharge note:** The 17.2% fuel surcharge in `lib/pricing/ups-rates.ts` (`FUEL_SURCHARGE_RATE`) is a fixed estimate. UPS publishes the actual rate weekly — see M-2 for automating this.
+**Fuel surcharge note:** M-2 is implemented. `GET /api/pricing/fuel-surcharge` scrapes UPS weekly and caches the rate in Redis (7-day TTL). The estimate route reads from Redis and falls back to `ups-fuel-surcharge-history.json` when the cache is cold.
