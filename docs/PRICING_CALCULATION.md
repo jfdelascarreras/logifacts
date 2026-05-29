@@ -382,7 +382,7 @@ With a **20% mark up** entered in the form:
 
 | What changed | Action |
 |---|---|
-| **Fuel surcharge** (weekly) | Add new entry to the front of `lib/pricing/data/ups-fuel-surcharge-history.json` |
+| **Fuel surcharge** (weekly) | Add new entry to the front of `lib/pricing/data/ups-fuel-surcharge-history.json`. Estimates use cache → history immediately; Redis is warmed from UPS in the background on cache miss. `GET /api/pricing/fuel-surcharge` (auth-gated) blocks for a live scrape when needed. |
 | **Annual rate change** (every Jan) | Replace source XLSX, run `pnpm dlx tsx scripts/convert-ups-data.ts`, update `accessorials.json` from new PDF, update effective dates |
 | **Zone chart change** | Replace source XLS files, re-run convert script |
 | **DAS / remote area ZIP list change** | Replace `lib/pricing/data/zip-surcharges.json` |
@@ -407,9 +407,11 @@ lib/pricing/data/accessorials.json       2026 list rates for all accessorials
 lib/pricing/data/zip-surcharges.json     25,782 ZIP → DAS / remote type
 lib/pricing/data/zone-charts/            902 per-origin zone chart JSON files
 scripts/convert-ups-data.ts             converts XLS/XLSX source files to JSON
-app/api/pricing/estimate/route.ts        HTTP handler: auth, validation, zone load, merge discounts
+app/api/pricing/estimate/route.ts        HTTP handler: auth, validation, zone load, merge discounts, fuel cache
+app/api/pricing/fuel-surcharge/route.ts  GET: auth-gated; returns cached/live fuel rates
+lib/cache/ups-fuel-surcharge-cache.ts    Redis + UPS scrape + history fallback
 app/components/pricing/ups-quote-form.tsx  input form
 app/components/pricing/rate-result.tsx   cost breakdown display
 app/components/profile/contract-discounts-editor.tsx  profile discount settings
-lib/pricing/ups-estimate.test.ts         146 unit tests
+lib/pricing/ups-estimate.test.ts         unit tests (see `pnpm test lib/pricing`)
 ```

@@ -104,7 +104,7 @@ Shows every charge that makes up the total:
 | Published List Rate | UPS's 2026 standard daily rate for that service, zone, and billable weight |
 | Contract Discount | Your negotiated transportation discount, applied as a percentage off the list rate |
 | Net Transportation Charge | List rate after your discount |
-| Fuel Surcharge | Current weekly rate (scraped from UPS and cached) applied to your net TC after your fuel discount |
+| Fuel Surcharge | Current weekly rate applied to net TC after fuel discount. On first estimate after cache expiry, the API scrapes UPS and stores the rate in Redis (7-day TTL). |
 | Residential Surcharge | Flat charge for residential delivery, after your residential discount |
 | DAS (Delivery Area Surcharge) | Applied when the destination ZIP is in a UPS-designated rural or extended area |
 | Large Package Surcharge | Triggered when the package exceeds 96" on the longest side or 130" in combined girth |
@@ -123,7 +123,7 @@ If you entered a Mark Up %, this section shows:
 > Example: Your UPS cost = $42.18, Mark Up = 15% → Mark Up amount = $6.33 → Bill to Client = **$48.51**
 
 ### Contract Accessorial Rates (reference)
-A quick reference for charges that are not calculated per-shipment (address correction, third-party billing, declared value). These are your contracted rates for awareness, not included in the estimate above unless you explicitly toggled them.
+A quick reference for UPS **list rates** from `accessorials.json`. Your profile contract discounts apply in the estimate breakdown — these reference lines show published list rates only.
 
 ---
 
@@ -133,7 +133,7 @@ A quick reference for charges that are not calculated per-shipment (address corr
 |---|---|
 | Quarterly rebate (3%) | Applied by UPS at the account level quarterly — not predictable per shipment |
 | Saturday / extended delivery | Not yet implemented; add to estimate manually if applicable |
-| Exact fuel surcharge at invoice time | The estimate uses the most recent weekly rate cached from UPS. The actual invoice fuel rate is whatever UPS publishes on the Monday of the pickup week. |
+| Exact fuel surcharge at invoice time | The estimate uses the most recent weekly rate — warmed from UPS on cache miss, otherwise from `ups-fuel-surcharge-history.json`. Actual invoice fuel rate is whatever UPS publishes on the Monday of the pickup week. |
 | Duty and brokerage fees | US domestic only — no international charges |
 
 All displayed numbers are labeled **Estimate**. Actual invoice charges may differ.

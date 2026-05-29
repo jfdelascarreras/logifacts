@@ -182,6 +182,14 @@ describe('estimateUPS — rate calculation', () => {
     expect(r.breakdown.zone).toBe(305)
     expect(r.breakdown.publishedRate).toBe(41.01)
   })
+
+  it('2nd Day Air A.M. 5 lbs Chicago→NYC: zone 245', () => {
+    const r = estimateUPS({ weightLbs: 5, destinationZip: '10001', service: '2day_am', residential: false, zoneChart: CHART_601 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.breakdown.zone).toBe(245)
+    expect(r.breakdown.publishedRate).toBeGreaterThan(0)
+  })
 })
 
 describe('baseZone', () => {
@@ -456,5 +464,87 @@ describe('estimateUPS — remote area, declared value, address correction', () =
       b.remoteAreaSurcharge + b.declaredValueCharge + b.addressCorrectionCharge,
       4,
     )
+  })
+})
+
+describe('estimateUPS — Small Business rate program', () => {
+  it('uses SB rates with no fuel, DAS, or contract discounts', () => {
+    const r = estimateUPS({
+      weightLbs: 5,
+      destinationZip: '10001',
+      service: 'ground',
+      rateType: 'smallBusiness',
+      residential: false,
+      zoneChart: CHART_601,
+      contractDiscounts: { transportation: 0.56 },
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const b = r.breakdown
+    expect(b.rateType).toBe('smallBusiness')
+    expect(b.contractDiscounts.transportation).toBe(0)
+    expect(b.fuelSurcharge).toBe(0)
+    expect(b.fuelSurchargeRate).toBe(0)
+    expect(b.dasSurcharge).toBe(0)
+    expect(b.publishedRate).toBeGreaterThan(0)
+  })
+
+  it('SB residential uses flat $3.55 ground rate', () => {
+    const r = estimateUPS({
+      weightLbs: 5,
+      destinationZip: '77001',
+      service: 'ground',
+      rateType: 'smallBusiness',
+      residential: true,
+      zoneChart: CHART_601,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.breakdown.residentialSurcharge).toBe(3.55)
+  })
+
+  it('SB waives large package and additional handling surcharges', () => {
+    const r = estimateUPS({
+      weightLbs: 80,
+      dimensionsIn: { length: 97, width: 10, height: 10 },
+      destinationZip: '10001',
+      service: 'ground',
+      rateType: 'smallBusiness',
+      residential: false,
+      nonStandardPackaging: true,
+      zoneChart: CHART_601,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.breakdown.largePackageSurcharge).toBe(0)
+    expect(r.breakdown.additionalHandlingSurcharge).toBe(0)
+    expect(r.breakdown.addressCorrectionCharge).toBe(0)
+  })
+
+  it('SB waives US-48 remote area surcharge but keeps Alaska/Hawaii', () => {
+    const us48 = estimateUPS({
+      weightLbs: 5,
+      destinationZip: '01026',
+      service: 'ground',
+      rateType: 'smallBusiness',
+      residential: false,
+      zoneChart: CHART_601,
+    })
+    expect(us48.ok).toBe(true)
+    if (!us48.ok) return
+    expect(us48.breakdown.remoteAreaType).toBe('us48')
+    expect(us48.breakdown.remoteAreaSurcharge).toBe(0)
+
+    const ak = estimateUPS({
+      weightLbs: 5,
+      destinationZip: '99540',
+      service: 'ground',
+      rateType: 'smallBusiness',
+      residential: false,
+      zoneChart: CHART_601,
+    })
+    expect(ak.ok).toBe(true)
+    if (!ak.ok) return
+    expect(ak.breakdown.remoteAreaSurcharge).toBe(46.25)
   })
 })

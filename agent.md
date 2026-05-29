@@ -153,7 +153,7 @@ if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 ### Pricing conventions
 - Pricing is stateless — no data persisted per query.
 - Rate logic is pure: `lib/pricing/` only. No DB calls, no HTTP inside lib.
-- DIM divisors: **220** for Ground, **194** for all Air services (`3day`, `2day`, `nda_saver`, `nda`).
+- DIM divisors: **220** for Ground; **194** for all Air services (`3day`, `2day`, `2day_am`, `nda_saver`, `nda`). SB program uses divisor **166** when volume exceeds 864 cu in.
 - Label all rate results as **estimates** in the UI — actual charges may vary.
 - Full pipeline details: [`docs/PRICING_CALCULATION.md`](./docs/PRICING_CALCULATION.md).
 
@@ -260,48 +260,56 @@ Lets users estimate UPS shipping costs before sending a package. Stateless — n
 
 ### Flow
 
-1. User inputs weight, optional dimensions, destination ZIP, service, residential flag, and optional contract discount %.
-2. `POST /api/pricing/estimate` resolves origin ZIP (body override → user profile), loads the appropriate zone chart, calls **`estimateUPS`** in `lib/pricing/ups-estimate.ts`.
-3. Response contains `UPSRateBreakdown`: billable weight, zone, published rate, Net TC, fuel surcharge, residential surcharge, total.
+1. User inputs weight, optional dimensions, origin/destination ZIP, service, rate program (Daily vs Small Business), residential flag, and optional accessorial flags.
+2. `POST /api/pricing/estimate` resolves origin ZIP (body override → user profile), loads the zone chart (in-memory cached), warms fuel surcharge cache from UPS on Redis miss, merges profile `contract_discounts`, calls **`estimateUPS`** in `lib/pricing/ups-estimate.ts`.
+3. Response contains `UPSRateBreakdown`: billable weight, zone, published rate, net TC, fuel surcharge, accessorials, total.
 
 ### Key types (`lib/pricing/types.ts`)
 
 ```ts
-type UPSService = 'ground' | '3day' | '2day' | 'nda_saver' | 'nda'
+type UPSService = 'ground' | '3day' | '2day' | '2day_am' | 'nda_saver' | 'nda'
+type UPSRateType = 'daily' | 'smallBusiness'
+
+type ContractDiscounts = {
+  transportation?: number    // 0–0.95, applied to published rate
+  fuelSurcharge?: number
+  residential?: number
+  das?: number
+  additionalHandling?: number
+  largePackage?: number
+  addressCorrection?: number
+  declaredValue?: number
+}
 
 type UPSEstimateInput = {
   weightLbs: number
   dimensionsIn?: { length: number; width: number; height: number }
   destinationZip: string
   service: UPSService
+  rateType?: UPSRateType
   residential: boolean
+  nonStandardPackaging?: boolean
+  declaredValueDollars?: number
+  addressCorrection?: boolean
   zoneChart: ZoneChart
-  contractDiscountPct?: number  // 0–0.95
-}
-
-type UPSRateBreakdown = {
-  billableWeightLbs: number
-  billableWeightSource: 'actual' | 'dimensional'
-  zone: number
-  publishedRate: number
-  contractDiscountPct: number
-  netTransportationCharge: number
-  fuelSurcharge: number
-  residentialSurcharge: number
-  totalEstimatedCharge: number
+  contractDiscounts?: ContractDiscounts
+  fuelSurchargeRates?: { ground: number; air: number }
 }
 ```
+
+Profile discounts live in `user_metadata.contract_discounts` (My Profile). Markup % for client pricing is UI-only in `rate-result.tsx`.
 
 ### File locations
 
 - Orchestration: `lib/pricing/ups-estimate.ts`
 - Rate constants + table lookup: `lib/pricing/ups-rates.ts`
-- Zone resolution: `lib/pricing/ups-zone-lookup.ts`
-- Rate data: `lib/pricing/data/ups-rates.json` (2026 UPS Daily Rates)
-- Zone charts: `ups_zone_charts/{prefix}.xls` (source) → `lib/pricing/data/zone-charts/{prefix}.json` via `scripts/convert-ups-data.ts`
+- Zone resolution: `lib/pricing/ups-zone-lookup.ts`, `lib/pricing/zone-chart-loader.ts`
+- Fuel cache (Redis + UPS scrape): `lib/cache/ups-fuel-surcharge-cache.ts`
+- Rate data: `lib/pricing/data/ups-rates.json`, `ups-sb-rates.json`
+- Zone charts: `lib/pricing/data/zone-charts/{prefix}.json`
 - UI form: `app/components/pricing/ups-quote-form.tsx`
 - UI result: `app/components/pricing/rate-result.tsx`
-- API route: `app/api/pricing/estimate/route.ts`
+- API routes: `app/api/pricing/estimate/route.ts`, `app/api/pricing/fuel-surcharge/route.ts`
 - Full calculation doc: [`docs/PRICING_CALCULATION.md`](./docs/PRICING_CALCULATION.md)
 
 ---

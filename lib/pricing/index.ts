@@ -1,5 +1,6 @@
 export { estimateUPS } from './ups-estimate'
 export { lookupZone } from './ups-zone-lookup'
-export { ACCESSORIAL_REFERENCE, getFuelSurchargeRate } from './ups-rates'
+export { ACCESSORIAL_REFERENCE } from './accessorial-reference'
+export { getFuelSurchargeRate } from './ups-rates'
 export { UPS_SERVICE_LABELS } from './types'
 export type { UPSService, UPSRateType, ContractDiscounts, AdditionalHandlingType, RemoteAreaType, UPSEstimateInput, UPSEstimateResult, UPSRateBreakdown, ZoneChart } from './types'

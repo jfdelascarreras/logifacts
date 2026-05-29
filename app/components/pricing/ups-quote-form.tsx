@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,9 +32,28 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<UPSRateBreakdown | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    setOriginZip(defaultOriginZip)
+  }, [defaultOriginZip])
+
+  useEffect(() => {
+    abortRef.current?.abort()
+    setResult(null)
+    setLoading(false)
+  }, [
+    weightLbs, length, width, height, originZip, destinationZip,
+    service, rateType, residential, nonStandardPackaging,
+    addressCorrection, declaredValue,
+  ])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+
     setError(null)
     setResult(null)
 
@@ -53,6 +72,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
       const res = await fetch('/api/pricing/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: ac.signal,
         body: JSON.stringify({
           weightLbs: wt,
           ...(hasDims ? { dimensionsIn: { length: l, width: w, height: h } } : {}),
@@ -63,16 +83,21 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
           residential,
           nonStandardPackaging,
           addressCorrection,
-          declaredValueDollars: declaredValue ? parseFloat(declaredValue) : 0,
+          declaredValueDollars: (() => {
+            const dv = declaredValue ? parseFloat(declaredValue) : 0
+            return dv > 0 ? dv : 0
+          })(),
         }),
       })
       const data = await res.json() as { breakdown?: UPSRateBreakdown; error?: string }
+      if (ac.signal.aborted) return
       if (!res.ok || data.error) {
         setError(data.error ?? 'Something went wrong.')
       } else if (data.breakdown) {
         setResult(data.breakdown)
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       setError('Network error — please try again.')
     } finally {
       setLoading(false)

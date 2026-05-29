@@ -1,7 +1,7 @@
 'use client'
 
 import { ACCESSORIAL_REFERENCE, UPS_SERVICE_LABELS } from '@/lib/pricing'
-import type { UPSRateBreakdown } from '@/lib/pricing'
+import type { RemoteAreaType, UPSRateBreakdown } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
 
 function fmt(n: number) {
@@ -10,6 +10,12 @@ function fmt(n: number) {
 
 function pct(n: number) {
   return `${(n * 100).toFixed(1)}%`
+}
+
+function remoteAreaLabel(type: RemoteAreaType): string {
+  if (type === 'alaska') return 'Alaska'
+  if (type === 'hawaii') return 'Hawaii'
+  return 'Remote US'
 }
 
 type Props = { breakdown: UPSRateBreakdown; markupPct?: number }
@@ -128,10 +134,12 @@ export function RateResult({ breakdown: b, markupPct }: Props) {
             <span>Net Transportation Charge</span>
             <span className="font-mono text-green-500">{fmt(netTransportationCharge)}</span>
           </div>
-          <div className="flex justify-between py-1 border-b border-border text-sm">
-            <span className="text-muted-foreground">Fuel Surcharge ({pct(fuelSurchargeRate)})</span>
-            <span className="font-mono text-amber-500">+{fmt(fuelSurcharge)}</span>
-          </div>
+          {!isSB && (
+            <div className="flex justify-between py-1 border-b border-border text-sm">
+              <span className="text-muted-foreground">Fuel Surcharge ({pct(fuelSurchargeRate)})</span>
+              <span className="font-mono text-amber-500">+{fmt(fuelSurcharge)}</span>
+            </div>
+          )}
           {residentialSurcharge > 0 && (
             <div className="flex justify-between py-1 border-b border-border text-sm">
               <span className="text-muted-foreground">Residential Surcharge</span>
@@ -161,10 +169,10 @@ export function RateResult({ breakdown: b, markupPct }: Props) {
               <span className="font-mono text-amber-500">+{fmt(additionalHandlingSurcharge)}</span>
             </div>
           )}
-          {remoteAreaSurcharge > 0 && (
+          {remoteAreaSurcharge > 0 && remoteAreaType && (
             <div className="flex justify-between py-1 border-b border-border text-sm">
               <span className="text-muted-foreground">
-                Remote Area Surcharge ({remoteAreaType === 'alaska' ? 'Alaska' : 'Hawaii'})
+                Remote Area Surcharge ({remoteAreaLabel(remoteAreaType)})
               </span>
               <span className="font-mono text-amber-500">+{fmt(remoteAreaSurcharge)}</span>
             </div>
@@ -220,7 +228,7 @@ export function RateResult({ breakdown: b, markupPct }: Props) {
       {/* Accessorial reference */}
       <div className="rounded-lg border bg-card p-4">
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-3">
-          Contract Accessorial Rates (reference)
+          UPS Accessorial List Rates (reference)
         </p>
         <div className="space-y-1">
           {ACCESSORIAL_REFERENCE.map(({ name, net, detail }) => (

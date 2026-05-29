@@ -92,12 +92,3 @@ export function maxAvailableWeightSB(service: UPSService): number {
   if (!svcRates || Object.keys(svcRates).length === 0) return 0
   return Math.max(...Object.keys(svcRates).map(Number))
 }
-
-export const ACCESSORIAL_REFERENCE = [
-  { name: 'Address Correction', net: '~$7.88', detail: '~50% off list' },
-  { name: 'Residential Surcharge', net: '$2.52', detail: '60% off $6.30 list' },
-  { name: 'Delivery Area Surcharge', net: '$3.80–$7.60', detail: '~50% off list' },
-  { name: 'Fuel Surcharge', net: 'varies weekly', detail: 'see breakdown above' },
-  { name: 'Third Party Billing', net: '75% off list', detail: '' },
-  { name: 'Declared Value', net: '41.18% off list', detail: '' },
-] as const

@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server'
 
+import { resolveFuelSurchargeRates } from '@/lib/cache/ups-fuel-surcharge-cache'
 import { createClient } from '@/lib/supabase/server'
-import { redis } from '@/lib/cache/redis'
 import { estimateUPS } from '@/lib/pricing/ups-estimate'
 import { loadZoneChart, resolveZoneChartPrefix } from '@/lib/pricing/zone-chart-loader'
 import type { ContractDiscounts, UPSRateType, UPSService } from '@/lib/pricing/types'
-import type { LiveFuelRates } from '@/lib/pricing/ups-fuel-surcharge'
-
-const FUEL_REDIS_KEY = 'ups:fuel-surcharge'
 
 const VALID_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
 const VALID_RATE_TYPES: UPSRateType[] = ['daily', 'smallBusiness']
@@ -95,12 +92,13 @@ export async function POST(req: Request) {
     : {}
   const contractDiscounts: ContractDiscounts = { ...profileDiscounts, ...bodyDiscounts }
 
-  // Read cached live fuel surcharge rates from Redis (falls back to history JSON in estimateUPS)
-  let fuelSurchargeRates: LiveFuelRates | undefined
-  try {
-    fuelSurchargeRates = (await redis?.get<LiveFuelRates>(FUEL_REDIS_KEY)) ?? undefined
-  } catch {
-    // Redis unavailable — estimateUPS will use the history JSON fallback
+  // Daily rates only — SB waives fuel. Use history/cache immediately; warm Redis in background.
+  let fuelSurchargeRates: { ground: number; air: number } | undefined
+  if (rateType !== 'smallBusiness') {
+    const fuelResolved = await resolveFuelSurchargeRates({ warmCache: false })
+    if (fuelResolved) {
+      fuelSurchargeRates = { ground: fuelResolved.ground, air: fuelResolved.air }
+    }
   }
 
   const result = estimateUPS({
@@ -111,7 +109,9 @@ export async function POST(req: Request) {
     rateType,
     residential: Boolean(residential),
     nonStandardPackaging: Boolean(nonStandardPackaging),
-    declaredValueDollars: typeof declaredValueDollars === 'number' ? declaredValueDollars : 0,
+    declaredValueDollars: typeof declaredValueDollars === 'number' && declaredValueDollars > 0
+      ? declaredValueDollars
+      : 0,
     addressCorrection: Boolean(addressCorrection),
     zoneChart,
     contractDiscounts,
