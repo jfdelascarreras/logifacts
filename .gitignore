@@ -12,6 +12,11 @@ scripts/_*
 # Personal / non-project files
 email-signature.html
 
+# UPS source documents — large binaries, not committed (see lib/pricing/data/sources/README.md)
+ups_zone_charts/
+small-business-rate-guide-us-en.pdf
+lib/small-business-rate-guide-us-en.pdf
+
 # dependencies
 /node_modules
 /.pnp

@@ -5,12 +5,12 @@ import { parseWWE } from './wwe'
 import type { ParsedInvoiceLine } from './types'
 
 export type { ParsedInvoiceLine }
+export { detectCarrierFromBuffer, isExcelBuffer } from './detect-carrier'
+export type { CarrierDetectionResult } from './detect-carrier'
 
 /**
- * Detect carrier from filename heuristics.
- * WWE invoices often contain "WWE" or "WorldWide" in the name.
- * FedEx invoices often contain "FedEx" or "FX".
- * Falls back to UPS.
+ * Filename-only carrier detection — kept for tests and legacy callers.
+ * Prefer detectCarrierFromBuffer() for production upload paths.
  */
 export function detectCarrier(filename: string): Carrier {
   const name = filename.toLowerCase()

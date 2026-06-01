@@ -7,6 +7,7 @@
 import ExcelJS from 'exceljs'
 
 import { identifierLooksScientificNotationCorrupted } from '../identifier-safety'
+import { loadExcelWorkbook } from './excel-load'
 import type { ParsedInvoiceLine } from './types'
 import { excelCellRawNum, excelCellStr } from './excel-row'
 
@@ -64,10 +65,7 @@ export function parseWWEWorksheet(ws: ExcelJS.Worksheet | undefined): WWEWorkshe
 }
 
 export async function parseWWE(blob: Uint8Array | ArrayBufferLike): Promise<ParsedInvoiceLine[]> {
-  const workbook = new ExcelJS.Workbook()
   const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(blob as Uint8Array)
-  // @ts-expect-error — exceljs Buffer type lags Node generics
-  await workbook.xlsx.load(buffer)
-
+  const workbook = await loadExcelWorkbook(buffer)
   return parseWWEWorksheet(workbook.worksheets[0]).lines
 }

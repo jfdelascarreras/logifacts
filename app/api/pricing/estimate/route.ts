@@ -1,35 +1,13 @@
-import fs from 'node:fs'
-import path from 'node:path'
-
 import { NextResponse } from 'next/server'
 
+import { resolveFuelSurchargeRates } from '@/lib/cache/ups-fuel-surcharge-cache'
 import { createClient } from '@/lib/supabase/server'
 import { estimateUPS } from '@/lib/pricing/ups-estimate'
-import type { UPSService, ZoneChart } from '@/lib/pricing/types'
+import { loadZoneChart, resolveZoneChartPrefix } from '@/lib/pricing/zone-chart-loader'
+import type { ContractDiscounts, UPSRateType, UPSService } from '@/lib/pricing/types'
 
-const VALID_SERVICES: UPSService[] = ['ground', '3day', '2day', 'nda_saver', 'nda']
-
-// Sorted list of origin prefixes we have zone charts for
-const AVAILABLE_PREFIXES = [5, 20, 100, 200, 300, 400, 500, 601, 700, 750, 800, 850, 900, 941, 980]
-
-function resolveChartPrefix(originZip: string): string {
-  const n = parseInt(originZip.replace(/\D/g, '').substring(0, 3), 10)
-  let best = AVAILABLE_PREFIXES[0]!
-  for (const p of AVAILABLE_PREFIXES) {
-    if (p <= n) best = p
-  }
-  return String(best).padStart(3, '0')
-}
-
-function loadZoneChart(originZip: string): ZoneChart | null {
-  const prefix = resolveChartPrefix(originZip)
-  const filePath = path.join(process.cwd(), 'lib/pricing/data/zone-charts', `${prefix}.json`)
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ZoneChart
-  } catch {
-    return null
-  }
-}
+const VALID_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
+const VALID_RATE_TYPES: UPSRateType[] = ['daily', 'smallBusiness']
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -47,8 +25,12 @@ export async function POST(req: Request) {
     originZip: bodyOriginZip,
     destinationZip,
     service,
+    rateType: rawRateType,
     residential,
-    contractDiscountPct,
+    nonStandardPackaging,
+    declaredValueDollars,
+    addressCorrection,
+    contractDiscounts: rawDiscounts,
   } = body as Record<string, unknown>
 
   if (typeof weightLbs !== 'number' || weightLbs <= 0) {
@@ -60,6 +42,9 @@ export async function POST(req: Request) {
   if (typeof service !== 'string' || !VALID_SERVICES.includes(service as UPSService)) {
     return NextResponse.json({ error: 'Invalid service.' }, { status: 422 })
   }
+  const rateType: UPSRateType = (typeof rawRateType === 'string' && VALID_RATE_TYPES.includes(rawRateType as UPSRateType))
+    ? rawRateType as UPSRateType
+    : 'daily'
 
   let parsedDims: { length: number; width: number; height: number } | undefined
   if (dimensionsIn != null) {
@@ -89,21 +74,48 @@ export async function POST(req: Request) {
 
   const zoneChart = loadZoneChart(originZip)
   if (!zoneChart) {
-    return NextResponse.json({ error: 'Zone chart unavailable for this origin ZIP.' }, { status: 422 })
+    const prefix = resolveZoneChartPrefix(originZip)
+    return NextResponse.json(
+      {
+        error: prefix
+          ? `Zone chart unavailable for origin prefix ${prefix}.`
+          : 'Zone chart unavailable for this origin ZIP.',
+      },
+      { status: 422 }
+    )
   }
 
-  const parsedDiscount = typeof contractDiscountPct === 'number'
-    ? contractDiscountPct
-    : undefined
+  // Profile discounts are the default; body discounts override per-field
+  const profileDiscounts = (user.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
+  const bodyDiscounts = (rawDiscounts !== null && typeof rawDiscounts === 'object')
+    ? rawDiscounts as ContractDiscounts
+    : {}
+  const contractDiscounts: ContractDiscounts = { ...profileDiscounts, ...bodyDiscounts }
+
+  // Daily rates only — SB waives fuel. Use history/cache immediately; warm Redis in background.
+  let fuelSurchargeRates: { ground: number; air: number } | undefined
+  if (rateType !== 'smallBusiness') {
+    const fuelResolved = await resolveFuelSurchargeRates({ warmCache: false })
+    if (fuelResolved) {
+      fuelSurchargeRates = { ground: fuelResolved.ground, air: fuelResolved.air }
+    }
+  }
 
   const result = estimateUPS({
     weightLbs,
     dimensionsIn: parsedDims,
     destinationZip,
     service: service as UPSService,
+    rateType,
     residential: Boolean(residential),
+    nonStandardPackaging: Boolean(nonStandardPackaging),
+    declaredValueDollars: typeof declaredValueDollars === 'number' && declaredValueDollars > 0
+      ? declaredValueDollars
+      : 0,
+    addressCorrection: Boolean(addressCorrection),
     zoneChart,
-    contractDiscountPct: parsedDiscount,
+    contractDiscounts,
+    fuelSurchargeRates,
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 422 })

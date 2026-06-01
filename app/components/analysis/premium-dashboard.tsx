@@ -93,6 +93,8 @@ type Summary = {
     costAccessorials: number
     costSurcharges: number
   }>
+  /** Spend totals by carrier — present when multi-carrier invoices exist. */
+  spendByCarrier?: Array<{ carrier: string; totalCost: number }>
   filterMeta?: InvoiceAnalysisFilterMeta
   appliedFilters?: InvoiceAnalysisFilters
   ingestDiagnostics?: {
@@ -261,6 +263,16 @@ export function PremiumDashboard() {
       setFilterMonths([])
       setFilterAccount('')
     }
+    // Build spendByCarrier from the byCarrier map stored in the summary JSON.
+    const byCarrierRaw = (raw.byCarrier ?? r.byCarrier) as Record<string, { totalNetAmount?: number }> | undefined
+    const spendByCarrier: Summary['spendByCarrier'] =
+      byCarrierRaw && typeof byCarrierRaw === 'object'
+        ? Object.entries(byCarrierRaw)
+            .map(([carrier, v]) => ({ carrier, totalCost: v?.totalNetAmount ?? 0 }))
+            .filter((x) => x.totalCost !== 0)
+            .sort((a, b) => b.totalCost - a.totalCost)
+        : undefined
+
     setSummary({
       totalRows: Number(raw.totalRows ?? r.total_rows ?? 0),
       measures: raw.measures,
@@ -283,6 +295,7 @@ export function PremiumDashboard() {
           : []) as NonNullable<Summary['weightBucketVolume']>,
       spendByInvoice,
       dailySpendByAccount,
+      spendByCarrier,
       filterMeta: mergedFilterMeta,
       appliedFilters: applied,
       ingestDiagnostics,
@@ -910,6 +923,53 @@ export function PremiumDashboard() {
             </Card>
 
           </div>
+        ) : null}
+
+        {summary?.spendByCarrier && summary.spendByCarrier.length > 1 ? (
+          <Card className="border-accent/25 bg-card">
+            <CardHeader>
+              <CardTitle>Spend by Carrier</CardTitle>
+              <CardDescription>Total cost split across all carriers in your invoices</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto rounded-md" tabIndex={0} role="region" aria-label="Spend by carrier table">
+                <table className="w-full min-w-[320px] text-left text-sm">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 font-medium">Carrier</th>
+                      <th className="px-3 py-2 font-medium text-right">Total Cost</th>
+                      <th className="px-3 py-2 font-medium text-right">% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.spendByCarrier.map((row) => {
+                      const grandTotal = summary.spendByCarrier!.reduce((s, r) => s + r.totalCost, 0)
+                      const pct = grandTotal > 0 ? (row.totalCost / grandTotal) * 100 : 0
+                      return (
+                        <tr key={row.carrier} className="border-b border-border">
+                          <td className="px-3 py-2 font-medium text-foreground">{row.carrier}</td>
+                          <td className="px-3 py-2 text-right text-foreground">
+                            {row.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-3 py-2 text-right text-foreground">{pct.toFixed(1)}%</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border bg-muted/30 font-semibold">
+                      <td className="px-3 py-2 text-foreground">Total</td>
+                      <td className="px-3 py-2 text-right text-foreground">
+                        {summary.spendByCarrier.reduce((s, r) => s + r.totalCost, 0)
+                          .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-2 text-right text-foreground">100.0%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         ) : null}
 
         {accountBreakdown.length > 1 ? (

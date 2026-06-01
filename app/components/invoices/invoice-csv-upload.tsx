@@ -358,17 +358,20 @@ export function InvoiceCsvUpload() {
     <div className="mx-auto w-full max-w-5xl">
       <Card className="border-accent/25 bg-card">
         <CardHeader>
-          <CardTitle className="text-accent">Upload invoice CSVs</CardTitle>
+          <CardTitle className="text-accent">Upload UPS invoice CSVs</CardTitle>
           <CardDescription>
-            Add UPS-style invoice CSV exports. After each successful upload we analyze your stored files and update the
-            metrics below automatically. Use <strong className="font-medium text-foreground">Refresh analysis</strong>{' '}
-            only when you want to recompute manually (for example after mapping changes or if automatic analysis failed).
+            Add UPS invoice CSV exports (250-column format from the UPS Billing Center). After each upload the metrics
+            below update automatically. Use <strong className="font-medium text-foreground">Refresh analysis</strong>{' '}
+            only when you want to recompute manually.{' '}
+            <a href="/upload" className="font-medium text-accent underline-offset-2 hover:underline">
+              Uploading FedEx or WWE invoices? Use the Upload Invoice page →
+            </a>
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4 sm:gap-5">
             <div className="grid gap-2">
-              <Label htmlFor="invoice-csv">CSV file</Label>
+              <Label htmlFor="invoice-csv">UPS CSV file</Label>
               <Input
                 id="invoice-csv"
                 type="file"
@@ -390,7 +393,8 @@ export function InvoiceCsvUpload() {
                 </p>
               ) : (
                 <p id="invoice-csv-help" className="text-sm text-muted-foreground">
-                  Choose one or more CSV files (max 5MB each). UPS header mapping is applied automatically.
+                  Choose one or more UPS CSV files (max 5MB each). For FedEx or WWE, use the{' '}
+                  <a href="/upload" className="text-accent underline-offset-2 hover:underline">Upload Invoice page</a>.
                 </p>
               )}
             </div>
