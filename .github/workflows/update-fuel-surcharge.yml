@@ -1,0 +1,127 @@
+name: Update UPS Fuel Surcharge
+
+on:
+  schedule:
+    # Every Monday at 2:00 PM UTC (10:00 AM ET) — UPS publishes new rates Monday mornings
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+    # Allows manual trigger from GitHub Actions tab (useful for testing or catch-up)
+
+jobs:
+  update:
+    name: Fetch live rate → commit history JSON
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch current fuel surcharge from deployed app
+        id: fetch
+        run: |
+          RESPONSE=$(curl -sf \
+            -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/internal/fuel-surcharge-sync" \
+            2>&1) || {
+            echo "⚠️  FETCH FAILED — could not reach ${{ secrets.APP_URL }}/api/internal/fuel-surcharge-sync"
+            echo ""
+            echo "Check that:"
+            echo "  1. APP_URL secret is set in GitHub → Settings → Secrets (e.g. https://logifacts.com)"
+            echo "  2. INTERNAL_API_SECRET matches what is set in Vercel env vars"
+            echo "  3. The app is deployed and healthy"
+            echo ""
+            echo "Manual fix: visit https://www.ups.com/us/en/support/shipping-support/shipping-costs-rates/fuel-surcharges.page"
+            echo "and add this week's entry to lib/pricing/data/ups-fuel-surcharge-history.json"
+            exit 1
+          }
+
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          echo "Fetched: $RESPONSE"
+
+      - name: Validate response has ground and air rates
+        id: validate
+        run: |
+          RESPONSE='${{ steps.fetch.outputs.response }}'
+          GROUND=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['ground'])" 2>/dev/null)
+          AIR=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['air'])" 2>/dev/null)
+
+          if [ -z "$GROUND" ] || [ -z "$AIR" ]; then
+            echo "⚠️  PARSE FAILED — response did not contain ground/air rates"
+            echo "Response was: $RESPONSE"
+            exit 1
+          fi
+
+          echo "ground=$GROUND" >> $GITHUB_OUTPUT
+          echo "air=$AIR"       >> $GITHUB_OUTPUT
+          echo "Ground: $GROUND  Air: $AIR"
+
+      - name: Update history JSON
+        id: update
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          from datetime import date, timedelta
+          from pathlib import Path
+
+          HISTORY = Path("lib/pricing/data/ups-fuel-surcharge-history.json")
+
+          # Monday of current week
+          today = date.today()
+          monday = today - timedelta(days=today.weekday())
+          effective_date = monday.isoformat()
+
+          # Rates from previous step (passed via environment)
+          import os
+          ground = float(os.environ["GROUND"])
+          air    = float(os.environ["AIR"])
+
+          history = json.loads(HISTORY.read_text())
+
+          if history and history[0].get("effectiveDate") == effective_date:
+              print(f"Already up to date — {effective_date} is already the latest entry.")
+              Path("/tmp/changed").write_text("false")
+              sys.exit(0)
+
+          new_entry = {
+              "effectiveDate": effective_date,
+              "domesticGround": ground,
+              "domesticAir": air,
+              # Keep intl fields from last entry as placeholder if not in live response
+              "intlAirExport":          history[0].get("intlAirExport", 0) if history else 0,
+              "intlAirImport":          history[0].get("intlAirImport", 0) if history else 0,
+              "intlGroundExportImport": history[0].get("intlGroundExportImport", 0) if history else 0,
+          }
+          history.insert(0, new_entry)
+
+          lines = [f"  {json.dumps(e)}" for e in history]
+          HISTORY.write_text("[\n" + ",\n".join(lines) + "\n]\n")
+
+          print(f"Updated — prepended {effective_date} (ground {ground*100:.2f}%, air {air*100:.2f}%)")
+          Path("/tmp/changed").write_text("true")
+          EOF
+        env:
+          GROUND: ${{ steps.validate.outputs.ground }}
+          AIR:    ${{ steps.validate.outputs.air }}
+
+      - name: Commit and push (if changed)
+        run: |
+          CHANGED=$(cat /tmp/changed)
+          if [ "$CHANGED" != "true" ]; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/pricing/data/ups-fuel-surcharge-history.json
+
+          GROUND="${{ steps.validate.outputs.ground }}"
+          AIR="${{ steps.validate.outputs.air }}"
+          TODAY=$(date -u +%Y-%m-%d)
+          MONDAY=$(python3 -c "from datetime import date,timedelta; t=date.today(); print((t-timedelta(days=t.weekday())).isoformat())")
+
+          git commit -m "chore(pricing): fuel surcharge ${MONDAY} — ground $(python3 -c "print(f'{float('$GROUND')*100:.2f}%')"), air $(python3 -c "print(f'{float('$AIR')*100:.2f}%')")"
+          git push
+          echo "✅ Committed and pushed."
