@@ -39,7 +39,8 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims
   const pathname = request.nextUrl.pathname
   const isPublicRoute =
-    pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/auth')
+    pathname === '/' || pathname.startsWith('/login') || pathname.startsWith('/auth') ||
+    pathname.startsWith('/api/internal/')
 
   if (!user && !isPublicRoute) {
     // no user, potentially respond by redirecting the user to the login page
