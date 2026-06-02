@@ -21,24 +21,40 @@ jobs:
       - name: Fetch current fuel surcharge from deployed app
         id: fetch
         run: |
-          RESPONSE=$(curl -sf \
+          TARGET="${{ secrets.APP_URL }}/api/internal/fuel-surcharge-sync"
+          echo "Calling: $TARGET"
+
+          HTTP_STATUS=$(curl -s -o /tmp/fuel_response.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/internal/fuel-surcharge-sync" \
-            2>&1) || {
-            echo "⚠️  FETCH FAILED — could not reach ${{ secrets.APP_URL }}/api/internal/fuel-surcharge-sync"
+            "$TARGET")
+
+          RESPONSE=$(cat /tmp/fuel_response.json)
+          echo "HTTP status : $HTTP_STATUS"
+          echo "Response    : $RESPONSE"
+
+          if [ "$HTTP_STATUS" = "401" ]; then
             echo ""
-            echo "Check that:"
-            echo "  1. APP_URL secret is set in GitHub → Settings → Secrets (e.g. https://logifacts.com)"
-            echo "  2. INTERNAL_API_SECRET matches what is set in Vercel env vars"
-            echo "  3. The app is deployed and healthy"
-            echo ""
-            echo "Manual fix: visit https://www.ups.com/us/en/support/shipping-support/shipping-costs-rates/fuel-surcharges.page"
-            echo "and add this week's entry to lib/pricing/data/ups-fuel-surcharge-history.json"
+            echo "⚠️  AUTHENTICATION FAILED (401) — INTERNAL_API_SECRET in GitHub does not match Vercel"
+            echo "Fix: make sure the exact same secret value is set in both:"
+            echo "  - GitHub → Settings → Secrets → INTERNAL_API_SECRET"
+            echo "  - Vercel → Project → Settings → Environment Variables → INTERNAL_API_SECRET"
             exit 1
-          }
+          fi
+
+          if [ "$HTTP_STATUS" = "404" ]; then
+            echo ""
+            echo "⚠️  ENDPOINT NOT FOUND (404) — the deployment may not have the new route yet"
+            echo "Fix: check that the latest commit is deployed on Vercel production"
+            exit 1
+          fi
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo ""
+            echo "⚠️  UNEXPECTED HTTP $HTTP_STATUS — check the app logs on Vercel"
+            exit 1
+          fi
 
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
-          echo "Fetched: $RESPONSE"
 
       - name: Validate response has ground and air rates
         id: validate
