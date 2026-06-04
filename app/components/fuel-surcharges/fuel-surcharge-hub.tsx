@@ -276,18 +276,26 @@ function SectionHead({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function KpiCard({
-  label, value, sub, delta, contracted, accentColor, extra,
+  label, value, sub, delta, contracted, accentColor, extra, live = false,
 }: {
   label: string; value: string; sub?: string; delta?: string | null
-  contracted?: string | null; accentColor: string; extra?: string
+  contracted?: string | null; accentColor: string; extra?: string; live?: boolean
 }) {
   const deltaUp = delta?.startsWith('+')
   return (
     <div
-      className="bg-card rounded-lg px-3.5 py-3 border-l-[3px]"
+      className="bg-card rounded-lg px-3.5 py-3 border-l-[3px] relative overflow-hidden"
       style={{ borderLeftColor: accentColor, borderTop: '0.5px solid var(--border)', borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)' }}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground mb-1">{label}</div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{label}</div>
+        {live && value !== '—' && (
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
+            <span className="text-[9px] font-bold text-[#00B4C5] tracking-widest uppercase">Live</span>
+          </span>
+        )}
+      </div>
       <div className="font-heading text-2xl font-bold leading-none" style={{ color: 'var(--foreground)' }}>{value}</div>
       {sub && <div className="text-[10px] text-muted-foreground mt-1">{sub}</div>}
       {delta && (
@@ -516,11 +524,11 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
       {/* Diesel KPIs */}
       <SectionHead>Diesel · Ground Carriers</SectionHead>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="EIA Diesel" value={lv('eia') != null ? '$' + lv('eia')!.toFixed(3) : '—'} sub="$/gal · this week" accentColor={CARRIER_COLORS.eiaD} extra="→ sets rates in 5-6 wks" />
-        <KpiCard label="UPS Ground" value={fmtPct(lv('upsGround') != null ? lv('upsGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups}
+        <KpiCard label="EIA Diesel" value={lv('eia') != null ? '$' + lv('eia')!.toFixed(3) : '—'} sub="$/gal · this week" accentColor={CARRIER_COLORS.eiaD} extra="→ sets rates in 5-6 wks" live />
+        <KpiCard label="UPS Ground" value={fmtPct(lv('upsGround') != null ? lv('upsGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups} live
           delta={prior?.upsGround != null && latest?.upsGround != null ? fmtDelta((latest.upsGround - prior.upsGround) / 100) : null}
           contracted={contractOn && contracted(lv('upsGround')) != null ? contracted(lv('upsGround'))! + '%' : null} />
-        <KpiCard label="FedEx Ground" value={fmtPct(lv('fedexGround') != null ? lv('fedexGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex}
+        <KpiCard label="FedEx Ground" value={fmtPct(lv('fedexGround') != null ? lv('fedexGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex} live
           delta={prior?.fedexGround != null && latest?.fedexGround != null ? fmtDelta((latest.fedexGround - prior.fedexGround) / 100) : null}
           contracted={contractOn && contracted(lv('fedexGround')) != null ? contracted(lv('fedexGround'))! + '%' : null} />
         <KpiCard label="OnTrac" value="—" sub="Not tracked" accentColor={CARRIER_COLORS.ontrac} />
@@ -531,10 +539,10 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
       <SectionHead>Jet Fuel · Air Carriers</SectionHead>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <KpiCard label="EIA Jet Fuel" value="—" sub="$/gal · this week" accentColor={CARRIER_COLORS.eiaJ} extra="→ sets air surcharges" />
-        <KpiCard label="UPS Air" value={fmtPct(lv('upsAir') != null ? lv('upsAir')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups}
+        <KpiCard label="UPS Air" value={fmtPct(lv('upsAir') != null ? lv('upsAir')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups} live
           delta={prior?.upsAir != null && latest?.upsAir != null ? fmtDelta((latest.upsAir - prior.upsAir) / 100) : null}
           contracted={contractOn && contracted(lv('upsAir')) != null ? contracted(lv('upsAir'))! + '%' : null} />
-        <KpiCard label="FedEx Express" value={fmtPct(lv('fedexExpress') != null ? lv('fedexExpress')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex}
+        <KpiCard label="FedEx Express" value={fmtPct(lv('fedexExpress') != null ? lv('fedexExpress')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex} live
           delta={prior?.fedexExpress != null && latest?.fedexExpress != null ? fmtDelta((latest.fedexExpress - prior.fedexExpress) / 100) : null}
           contracted={contractOn && contracted(lv('fedexExpress')) != null ? contracted(lv('fedexExpress'))! + '%' : null} />
       </div>
@@ -680,7 +688,7 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
       )}
 
       <p className="text-right text-[10px] text-muted-foreground">
-        EIA: eia.gov · Carrier rates: published FSC schedules · <strong>LogiFacts LLC</strong> — INSIGHT · ACTION · ARRIVAL
+        EIA: eia.gov · Carrier rates: published FSC schedules · <strong>LogiFacts LLC</strong>
       </p>
     </div>
   )
@@ -934,7 +942,16 @@ export function FuelSurchargeHub() {
               <span className="text-[11px] font-semibold tracking-[0.1em] text-[#A8C4E0] uppercase">LogiFacts</span>
             </div>
             <h2 className="font-heading text-2xl font-bold text-white">Fuel Surcharge Intelligence</h2>
-            <p className="text-[12px] text-[#A8C4E0] mt-1">U.S. National &amp; Regional Parcel Carriers · Weekly EIA Index · AI-Powered Analysis</p>
+            <p className="text-[12px] text-[#A8C4E0] mt-1">U.S. National &amp; Regional Parcel Carriers · Weekly EIA Index</p>
+            {/* Live indicator */}
+            <div className="flex items-center gap-2 mt-3">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00B4C5] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00B4C5]" />
+              </span>
+              <span className="text-[11px] font-semibold text-[#00B4C5] tracking-wide uppercase">Live</span>
+              <span className="text-[11px] text-[#A8C4E0]/60">· rates update every Monday</span>
+            </div>
           </div>
           {data && (
             <div className="text-right">
@@ -943,6 +960,15 @@ export function FuelSurchargeHub() {
                 {data.ups[0]?.effectiveDate
                   ? new Date(data.ups[0].effectiveDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
                   : '—'}
+              </div>
+              {/* Source badges */}
+              <div className="flex items-center justify-end gap-1.5 mt-2">
+                {(['UPS', 'FedEx', 'EIA'] as const).map(src => (
+                  <span key={src} className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5 text-[9px] font-semibold text-white/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
+                    {src}
+                  </span>
+                ))}
               </div>
             </div>
           )}

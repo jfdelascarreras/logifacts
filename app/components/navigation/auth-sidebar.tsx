@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { label: 'Upload Invoice', href: '/upload' },
   { label: 'Premium Analysis', href: '/premium-analysis' },
   { label: 'Fuel Surcharges', href: '/fuel-surcharges' },
-  { label: 'Pricing', href: '/pricing' },
+  { label: 'Calculate your next shipment', href: '/pricing' },
   { label: 'Join Panel', href: '/join-panel' },
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },
