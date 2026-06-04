@@ -963,12 +963,23 @@ export function FuelSurchargeHub() {
               </div>
               {/* Source badges */}
               <div className="flex items-center justify-end gap-1.5 mt-2">
-                {(['UPS', 'FedEx', 'EIA'] as const).map(src => (
-                  <span key={src} className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5 text-[9px] font-semibold text-white/80">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
-                    {src}
+                {/* UPS — gold shield */}
+                <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
+                  <span className="text-[9px] font-black" style={{ color: '#C9941A', letterSpacing: '0.04em' }}>UPS</span>
+                </span>
+                {/* FedEx — purple "Fed" + orange "Ex" */}
+                <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
+                  <span className="text-[9px] font-black leading-none">
+                    <span style={{ color: '#8B5CF6' }}>Fed</span><span style={{ color: '#FF6200' }}>Ex</span>
                   </span>
-                ))}
+                </span>
+                {/* EIA — blue */}
+                <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
+                  <span className="text-[9px] font-black" style={{ color: '#3B82F6', letterSpacing: '0.04em' }}>EIA</span>
+                </span>
               </div>
             </div>
           )}
