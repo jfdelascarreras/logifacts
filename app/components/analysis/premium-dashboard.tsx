@@ -1124,13 +1124,15 @@ export function PremiumDashboard() {
           </Card>
         ) : null}
 
-        {history[0]?.summary?.monthlySpend && history[0].summary.monthlySpend.length >= 2 ? (
-          <MomWaterfall
-            monthlySpend={history[0].summary.monthlySpend}
-            filterYear={filterYear}
-            filterMonths={filterMonths}
-          />
-        ) : null}
+        {(() => {
+          // Prefer the current (possibly filtered) view when it has 2+ months so the
+          // waterfall respects account filters. Fall back to the saved full-dataset
+          // analysis only when the current summary is narrowed to a single month.
+          const cur = summary?.monthlySpend
+          const hist = history[0]?.summary?.monthlySpend
+          const wm = cur && cur.length >= 2 ? cur : hist && hist.length >= 2 ? hist : null
+          return wm ? <MomWaterfall monthlySpend={wm} /> : null
+        })()}
 
         {detailByInvoice && summary?.spendByInvoice?.length ? (
           <Card className="border-accent/25 bg-card">
@@ -1237,93 +1239,6 @@ export function PremiumDashboard() {
           />
         ) : null}
 
-        {(() => {
-          const latestInvoices = history[0]?.summary?.spendByInvoice
-          if (!Array.isArray(latestInvoices) || latestInvoices.length === 0) return null
-          return (
-            <Card className="border-accent/25 bg-card">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Invoices Analyzed</CardTitle>
-                    <CardDescription>
-                      {latestInvoices.length.toLocaleString()} invoice{latestInvoices.length !== 1 ? 's' : ''} · total{' '}
-                      <span className="font-medium text-foreground">
-                        ${latestInvoices.reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {' · '}{new Date(history[0].updated_at).toLocaleString()}
-                    </CardDescription>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setInvoicesExpanded(v => !v)}
-                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-                    aria-expanded={invoicesExpanded}
-                  >
-                    {invoicesExpanded ? (
-                      <><ChevronUp className="size-4" aria-hidden /> Hide</>
-                    ) : (
-                      <><ChevronDown className="size-4" aria-hidden /> Show all</>
-                    )}
-                  </button>
-                </div>
-              </CardHeader>
-              {invoicesExpanded && (
-                <CardContent>
-                  <div
-                    className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    tabIndex={0}
-                    role="region"
-                    aria-label="Invoices analyzed table"
-                  >
-                    <table className="w-full min-w-[420px] text-left text-sm">
-                      <thead className="text-muted-foreground">
-                        <tr className="border-b border-border">
-                          <th className="px-3 py-2 font-medium">Invoice #</th>
-                          <th className="px-3 py-2 font-medium">Invoice Date</th>
-                          <th className="px-3 py-2 font-medium text-right">Total Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {latestInvoices.map((inv) => (
-                          <tr key={`${inv.accountNumber}-${inv.invoiceNumber}`} className="border-b border-border">
-                            <td className="px-3 py-2 font-medium text-foreground">{inv.invoiceNumber}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{inv.invoiceDate ?? '—'}</td>
-                            <td className="px-3 py-2 text-right text-foreground">
-                              {inv.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t border-border bg-muted/30 font-semibold">
-                          <td className="px-3 py-2 text-foreground" colSpan={2}>Total</td>
-                          <td className="px-3 py-2 text-right text-foreground">
-                            {latestInvoices
-                              .reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0)
-                              .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => exportSpendByInvoiceToCsv(latestInvoices, history[0].updated_at)}
-                    >
-                      <Download className="size-4" aria-hidden />
-                      Export to Excel
-                    </Button>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )
-        })()}
 
         </>}
 

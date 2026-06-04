@@ -648,6 +648,58 @@ describe('computeInvoiceAnalysisSummary — INF/ICC exclusion from costAccessori
     const summary = computeInvoiceAnalysisSummary([res], lookup)
     expect(summary.measures.costAccessorials).toBeCloseTo(7, 6)
   })
+
+  it('includes WWE/FedEx accessorial taxonomy rows without ACC classification', () => {
+    const lookup = buildChargeDescriptionLookup([
+      {
+        carrier: 'WWE',
+        charge_description: 'ADDITIONAL HANDLING WEIGHT',
+        transportation_mode: 'Other',
+        category_1: 'Accessorial Surcharge',
+        category_2: 'Handling',
+        category_3: 'Accessorials',
+        category_4: 'Handling & Size',
+        category_5: 'Weight',
+      },
+    ])
+    const wwe = invoiceRow({
+      'Carrier Name': 'WWE',
+      'Charge Description': 'ADDITIONAL HANDLING WEIGHT',
+      'Net Amount': '12.50',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+      'Charge Classification Code': '',
+      'Charge Category Code': '',
+    })
+    const summary = computeInvoiceAnalysisSummary([wwe], lookup)
+    expect(summary.measures.costAccessorials).toBeCloseTo(12.5, 6)
+    expect(summary.measures.costSurcharges).toBe(0)
+  })
+
+  it('does not double-count peak surcharges as accessorials via taxonomy', () => {
+    const lookup = buildChargeDescriptionLookup([
+      {
+        carrier: 'WWE',
+        charge_description: 'PEAK SURCHARGE COMMERCIAL',
+        transportation_mode: 'Other',
+        category_1: 'Accessorial Surcharge',
+        category_2: 'Peak/Demand',
+        category_3: 'Surcharge',
+        category_4: 'Peak Season',
+        category_5: 'Commercial',
+      },
+    ])
+    const wwe = invoiceRow({
+      'Carrier Name': 'WWE',
+      'Charge Description': 'PEAK SURCHARGE COMMERCIAL',
+      'Net Amount': '4.00',
+      'Invoice Amount': '0',
+      'Duty Amount': '0',
+    })
+    const summary = computeInvoiceAnalysisSummary([wwe], lookup)
+    expect(summary.measures.costSurcharges).toBeCloseTo(4, 6)
+    expect(summary.measures.costAccessorials).toBe(0)
+  })
 })
 
 describe('computeInvoiceAnalysisSummary — CPP rollups', () => {

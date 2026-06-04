@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -14,8 +14,6 @@ type MonthRow = {
 
 type Props = {
   monthlySpend: MonthRow[]
-  filterYear: string
-  filterMonths: number[]
 }
 
 // SVG layout constants
@@ -32,57 +30,41 @@ function fmtAmt(n: number): string {
   return `$${abs.toFixed(0)}`
 }
 
-function parseMonthLabel(label: string): { monthNum: number; year: number } {
-  const [name, yr] = label.split(' ')
-  return {
-    monthNum: new Date(`${name} 1`).getMonth() + 1,
-    year: parseInt(yr ?? '0', 10),
-  }
+function fmtPct(delta: number, base: number): string {
+  if (base === 0) return ''
+  const pct = (delta / Math.abs(base)) * 100
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
 }
 
-export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) {
-  const pair = useMemo(() => {
-    if (monthlySpend.length < 2) return null
+export function MomWaterfall({ monthlySpend }: Props) {
+  const [currentIdx, setCurrentIdx] = useState(0)
+  const [prevIdx, setPrevIdx] = useState(1)
+  const [hoveredBar, setHoveredBar] = useState<number | null>(null)
 
-    const parsed = monthlySpend.map((row, idx) => ({
-      ...parseMonthLabel(row.month),
-      row,
-      idx,
-    }))
+  // Reset to newest-vs-prior pair when data changes (e.g. after refresh or filter)
+  useEffect(() => {
+    setCurrentIdx(0)
+    setPrevIdx(Math.min(1, monthlySpend.length - 1))
+    setHoveredBar(null)
+  }, [monthlySpend])
 
-    let currentIdx = 0
-
-    if (filterYear && filterMonths.length > 0) {
-      const yr = parseInt(filterYear, 10)
-      const maxMonth = Math.max(...filterMonths)
-      const found = parsed.find(p => p.year === yr && p.monthNum === maxMonth)
-      if (found) currentIdx = found.idx
-    } else if (filterYear) {
-      const yr = parseInt(filterYear, 10)
-      const found = parsed.find(p => p.year === yr)
-      if (found) currentIdx = found.idx
-    }
-
-    if (currentIdx + 1 >= monthlySpend.length) return null
-
-    return {
-      current: monthlySpend[currentIdx],
-      previous: monthlySpend[currentIdx + 1],
-    }
-  }, [monthlySpend, filterYear, filterMonths])
+  const safeCurrentIdx = Math.min(currentIdx, monthlySpend.length - 1)
+  const safePrevIdx = Math.min(prevIdx, monthlySpend.length - 1)
 
   const chart = useMemo(() => {
-    if (!pair) return null
-    const { current, previous } = pair
+    if (monthlySpend.length < 2 || safeCurrentIdx === safePrevIdx) return null
+
+    const current = monthlySpend[safeCurrentIdx]!
+    const previous = monthlySpend[safePrevIdx]!
 
     const bfC = current.totalCost - (current.costFuel ?? 0) - (current.costAccessorials ?? 0) - (current.costSurcharges ?? 0)
     const bfP = previous.totalCost - (previous.costFuel ?? 0) - (previous.costAccessorials ?? 0) - (previous.costSurcharges ?? 0)
 
     const segments = [
-      { label: 'Base Freight', delta: bfC - bfP },
-      { label: 'Fuel', delta: (current.costFuel ?? 0) - (previous.costFuel ?? 0) },
-      { label: 'Surcharges', delta: (current.costSurcharges ?? 0) - (previous.costSurcharges ?? 0) },
-      { label: 'Accessorials', delta: (current.costAccessorials ?? 0) - (previous.costAccessorials ?? 0) },
+      { label: 'Base Freight', delta: bfC - bfP, base: bfP },
+      { label: 'Fuel', delta: (current.costFuel ?? 0) - (previous.costFuel ?? 0), base: previous.costFuel ?? 0 },
+      { label: 'Surcharges', delta: (current.costSurcharges ?? 0) - (previous.costSurcharges ?? 0), base: previous.costSurcharges ?? 0 },
+      { label: 'Accessorials', delta: (current.costAccessorials ?? 0) - (previous.costAccessorials ?? 0), base: previous.costAccessorials ?? 0 },
     ]
 
     let running = 0
@@ -90,7 +72,7 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
       const start = running
       const end = running + s.delta
       running = end
-      return { label: s.label, delta: s.delta, start, end }
+      return { label: s.label, delta: s.delta, base: s.base, start, end }
     })
 
     const allVals = [0, ...bars.flatMap(b => [b.start, b.end])]
@@ -112,26 +94,82 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
       y: MT + (1 - i / (tickCount - 1)) * CH,
     }))
 
+    const totalDelta = current.totalCost - previous.totalCost
+    const biggestBar = [...bars].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0]!
+
     return {
       bars, toY, zero: toY(0), barW, bx, ticks,
-      totalDelta: current.totalCost - previous.totalCost,
+      totalDelta,
+      previousTotal: previous.totalCost,
       currentMonth: current.month,
       previousMonth: previous.month,
+      biggestBar,
     }
-  }, [pair])
+  }, [monthlySpend, safeCurrentIdx, safePrevIdx])
 
-  if (!chart) return null
+  if (!chart || monthlySpend.length < 2) return null
 
-  const { bars, toY, zero, barW, bx, ticks, totalDelta, currentMonth, previousMonth } = chart
-  const sign = totalDelta >= 0 ? '+' : '−'
+  const { bars, toY, zero, barW, bx, ticks, totalDelta, previousTotal, currentMonth, previousMonth, biggestBar } = chart
+  const totalSign = totalDelta >= 0 ? '+' : '−'
+  const totalPctStr = fmtPct(totalDelta, previousTotal)
+  const biggestSign = biggestBar.delta >= 0 ? '+' : '−'
+  const biggestPct = fmtPct(biggestBar.delta, biggestBar.base)
+
+  const descLine = [
+    `${currentMonth} vs ${previousMonth}`,
+    Math.abs(totalDelta) > 0
+      ? `Biggest driver: ${biggestBar.label} (${biggestSign}${fmtAmt(Math.abs(biggestBar.delta))}${biggestPct ? `, ${biggestPct}` : ''})`
+      : null,
+  ].filter(Boolean).join(' · ')
 
   return (
     <Card className="border-accent/25 bg-card">
       <CardHeader>
-        <CardTitle>
-          What Drove the {sign}{fmtAmt(Math.abs(totalDelta))} MoM Change?
-        </CardTitle>
-        <CardDescription>{currentMonth} vs {previousMonth}</CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle>
+              What Drove the {totalSign}{fmtAmt(Math.abs(totalDelta))}{totalPctStr ? ` (${totalPctStr})` : ''} MoM Change?
+            </CardTitle>
+            <CardDescription className="mt-1">{descLine}</CardDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <select
+              aria-label="Current month"
+              className="h-7 rounded border border-input bg-background px-2 py-0 text-xs text-foreground shadow-sm"
+              value={safeCurrentIdx}
+              onChange={e => {
+                const v = Number(e.target.value)
+                setCurrentIdx(v)
+                if (v === safePrevIdx) {
+                  const fallback = v + 1 < monthlySpend.length ? v + 1 : Math.max(0, v - 1)
+                  if (fallback !== v) setPrevIdx(fallback)
+                }
+              }}
+            >
+              {monthlySpend.map((row, i) => (
+                <option key={i} value={i}>{row.month}</option>
+              ))}
+            </select>
+            <span className="shrink-0 text-xs text-muted-foreground">vs</span>
+            <select
+              aria-label="Prior month"
+              className="h-7 rounded border border-input bg-background px-2 py-0 text-xs text-foreground shadow-sm"
+              value={safePrevIdx}
+              onChange={e => {
+                const v = Number(e.target.value)
+                setPrevIdx(v)
+                if (v === safeCurrentIdx) {
+                  const fallback = v > 0 ? v - 1 : v + 1 < monthlySpend.length ? v + 1 : v
+                  if (fallback !== v) setCurrentIdx(fallback)
+                }
+              }}
+            >
+              {monthlySpend.map((row, i) => (
+                <option key={i} value={i}>{row.month}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <svg
@@ -139,6 +177,7 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
           width="100%"
           aria-label="Month-over-month cost waterfall chart"
           className="overflow-visible"
+          onMouseLeave={() => setHoveredBar(null)}
         >
           {/* Gridlines + Y-axis labels */}
           {ticks.map(({ val, y }) => (
@@ -172,6 +211,7 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
             const isPositive = bar.delta >= 0
             // red = cost went up (bad), green = cost went down (good)
             const fill = isPositive ? '#ef4444' : '#22c55e'
+            const isHovered = hoveredBar === i
             const labelY = isPositive ? yHigh - 7 : yLow + 13
 
             return (
@@ -186,8 +226,16 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
                   />
                 )}
 
+                {/* Invisible wider hit zone for hover */}
+                <rect
+                  x={x - 4} y={MT}
+                  width={barW + 8} height={CH}
+                  fill="transparent"
+                  onMouseEnter={() => setHoveredBar(i)}
+                />
+
                 {/* Bar */}
-                <rect x={x} y={yHigh} width={barW} height={h} fill={fill} fillOpacity={0.82} rx={3} />
+                <rect x={x} y={yHigh} width={barW} height={h} fill={fill} fillOpacity={isHovered ? 1 : 0.82} rx={3} />
 
                 {/* Delta label */}
                 <text
@@ -208,6 +256,23 @@ export function MomWaterfall({ monthlySpend, filterYear, filterMonths }: Props) 
             )
           })}
         </svg>
+
+        {/* Hover detail row — shows exact $ + % for the bar under the cursor */}
+        <div aria-live="polite" className="mt-1 min-h-[1.25rem] text-center text-xs text-muted-foreground">
+          {hoveredBar !== null && bars[hoveredBar] ? (() => {
+            const bar = bars[hoveredBar]!
+            const pct = fmtPct(bar.delta, bar.base)
+            return (
+              <span>
+                <span className="font-medium text-foreground">{bar.label}</span>
+                {': '}
+                <span className={bar.delta >= 0 ? 'text-red-500' : 'text-green-500'}>
+                  {bar.delta >= 0 ? '+' : '−'}{fmtAmt(Math.abs(bar.delta))}{pct ? ` (${pct})` : ''}
+                </span>
+              </span>
+            )
+          })() : null}
+        </div>
       </CardContent>
     </Card>
   )

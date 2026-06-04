@@ -34,7 +34,29 @@ type ChargeTaxonomyValue = {
 
 // category_3 is always passed through normalizeMappingText (trim+uppercase) before comparison,
 // so DB casing is irrelevant — these uppercase literals are the canonical normalized forms.
-const SURCHARGE_CATS = new Set(['FUEL SURCHARGE', 'ACCESSORIAL SURCHARGE', 'SURCHARGE'])
+export const SURCHARGE_CATEGORY_3 = new Set(['FUEL SURCHARGE', 'ACCESSORIAL SURCHARGE', 'SURCHARGE'])
+const SURCHARGE_CATS = SURCHARGE_CATEGORY_3
+
+/**
+ * Accessorial spend for KPI rollups.
+ * UPS CSV rows use Charge Classification Code ACC; FedEx/WWE Excel rows use taxonomy when ACC is absent.
+ */
+export function isAccessorialCostRow(params: {
+  chargeClassification: string
+  chargeCategoryCode: string
+  category1: string
+  category3: string
+}): boolean {
+  const chargeClassification = params.chargeClassification.trim().toUpperCase()
+  const chargeCategoryCode = params.chargeCategoryCode.trim().toUpperCase()
+  const isExcludedAccCat = chargeCategoryCode === 'INF' || chargeCategoryCode === 'ICC'
+  if (chargeClassification === 'ACC' && !isExcludedAccCat) return true
+
+  const cat1 = normalizeMappingText(params.category1)
+  const cat3 = normalizeMappingText(params.category3)
+  if (cat1 === 'ACCESSORIAL SURCHARGE' && !SURCHARGE_CATS.has(cat3)) return true
+  return false
+}
 
 /** Premium analysis mapping lookup (`UPS`, `FedEx`, `UPS\t${desc}`, etc.). */
 type InvoiceTaxonomyLookup = Map<string, ChargeTaxonomyValue>
@@ -589,9 +611,16 @@ export function computeInvoiceAnalysisSummary(
       rec['Carrier Name'] ?? '',
       chargeDescription
     )
+    const category1 = normalizeMappingText(mapping?.category_1)
     const category2 = normalizeMappingText(mapping?.category_2)
     const category3 = normalizeMappingText(mapping?.category_3)
     const category2Label = category2 || 'UNMAPPED'
+    const isAccessorialRow = isAccessorialCostRow({
+      chargeClassification,
+      chargeCategoryCode,
+      category1,
+      category3,
+    })
     const modeLabel = modeFromZone(zone)
     const weightBucket = weightBucketFromLbs(billedWeight)
 
@@ -616,12 +645,7 @@ export function computeInvoiceAnalysisSummary(
       summary.measures.costSurcharges += netAmount
     }
 
-    // INF = Information / non-revenue charges (e.g. peak adjustment notifications).
-    // ICC = Invoice Charge Credit — these are offsets/credits, not true accessorial costs.
-    // Both are classified ACC in UPS data but are excluded from costAccessorials to match
-    // the Power BI / Python dashboard definition used by the finance team.
-    const isExcludedAccCat = chargeCategoryCode === 'INF' || chargeCategoryCode === 'ICC'
-    if (chargeClassification === 'ACC' && !isExcludedAccCat) {
+    if (isAccessorialRow) {
       summary.measures.costAccessorials += netAmount
     }
 
@@ -677,7 +701,7 @@ export function computeInvoiceAnalysisSummary(
       }
       daily.totalCost += netAmount
       if (isFuelRow) daily.costFuel += netAmount
-      if (chargeClassification === 'ACC' && !isExcludedAccCat) daily.costAccessorials += netAmount
+      if (isAccessorialRow) daily.costAccessorials += netAmount
       if (SURCHARGE_CATS.has(category3)) daily.costSurcharges += netAmount
       dailySpend.set(dateKey, daily)
 
@@ -690,7 +714,7 @@ export function computeInvoiceAnalysisSummary(
       }
       dAcc.totalCost += netAmount
       if (isFuelRow) dAcc.costFuel += netAmount
-      if (chargeClassification === 'ACC' && !isExcludedAccCat) dAcc.costAccessorials += netAmount
+      if (isAccessorialRow) dAcc.costAccessorials += netAmount
       if (SURCHARGE_CATS.has(category3)) dAcc.costSurcharges += netAmount
       dailySpendByAccount.set(daKey, dAcc)
 
@@ -709,7 +733,7 @@ export function computeInvoiceAnalysisSummary(
       }
       monthAgg.totalCost += netAmount
       if (isFuelRow) monthAgg.costFuel += netAmount
-      if (chargeClassification === 'ACC' && !isExcludedAccCat) monthAgg.costAccessorials += netAmount
+      if (isAccessorialRow) monthAgg.costAccessorials += netAmount
       if (SURCHARGE_CATS.has(category3)) monthAgg.costSurcharges += netAmount
       monthSpend.set(monthLabel, monthAgg)
     }
@@ -729,7 +753,7 @@ export function computeInvoiceAnalysisSummary(
     }
     invAgg.totalCost += netAmount
     if (isFuelRow) invAgg.costFuel += netAmount
-    if (chargeClassification === 'ACC' && !isExcludedAccCat) invAgg.costAccessorials += netAmount
+    if (isAccessorialRow) invAgg.costAccessorials += netAmount
     if (SURCHARGE_CATS.has(category3)) invAgg.costSurcharges += netAmount
     if (dateKey) {
       invAgg.minDate =

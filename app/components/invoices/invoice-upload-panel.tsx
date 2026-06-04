@@ -210,13 +210,6 @@ export function InvoiceUploadPanel() {
               disabled={running}
             />
           </label>
-
-          {/* UPS tip */}
-          <div className="rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <span className="font-semibold">UPS tip:</span> Use{' '}
-            <span className="font-mono">&quot;Download CSV (250 Columns)&quot;</span> from UPS
-            Billing Center → My Plan Invoices → three-dot menu. Carrier is auto-detected.
-          </div>
         </CardContent>
       </Card>
 
