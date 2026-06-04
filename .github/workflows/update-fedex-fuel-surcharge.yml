@@ -1,0 +1,131 @@
+name: Update FedEx Fuel Surcharge
+
+on:
+  schedule:
+    # Every Monday at 3:00 PM UTC (11:00 AM ET) — after UPS sync runs at 2:00 PM UTC
+    - cron: '0 15 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update:
+    name: Fetch live FedEx rate → commit history JSON
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch current FedEx fuel surcharge from deployed app
+        id: fetch
+        run: |
+          TARGET="${{ secrets.APP_URL }}/api/internal/fedex-fuel-surcharge-sync"
+          echo "Calling: $TARGET"
+
+          HTTP_STATUS=$(curl -s -o /tmp/fedex_response.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INTERNAL_API_SECRET }}" \
+            "$TARGET")
+
+          RESPONSE=$(cat /tmp/fedex_response.json)
+          echo "HTTP status : $HTTP_STATUS"
+          echo "Response    : $RESPONSE"
+
+          if [ "$HTTP_STATUS" = "401" ]; then
+            echo "⚠️  AUTHENTICATION FAILED (401)"
+            exit 1
+          fi
+
+          if [ "$HTTP_STATUS" = "503" ]; then
+            echo "⚠️  FedEx scrape failed (503) — WAF may have blocked the request."
+            echo "The history JSON was NOT updated. Last known rates remain in place."
+            exit 0
+          fi
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "⚠️  UNEXPECTED HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+      - name: Validate response has ground and express rates
+        id: validate
+        if: steps.fetch.outputs.response != ''
+        run: |
+          RESPONSE='${{ steps.fetch.outputs.response }}'
+          GROUND=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['ground'])" 2>/dev/null)
+          EXPRESS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['express'])" 2>/dev/null)
+
+          if [ -z "$GROUND" ] || [ -z "$EXPRESS" ]; then
+            echo "⚠️  PARSE FAILED — response did not contain ground/express rates"
+            echo "Response was: $RESPONSE"
+            exit 1
+          fi
+
+          echo "ground=$GROUND"   >> $GITHUB_OUTPUT
+          echo "express=$EXPRESS" >> $GITHUB_OUTPUT
+          echo "Ground: $GROUND  Express: $EXPRESS"
+
+      - name: Update FedEx history JSON
+        id: update
+        if: steps.validate.outputs.ground != ''
+        run: |
+          python3 - <<'EOF'
+          import json, sys, os
+          from datetime import date, timedelta
+          from pathlib import Path
+
+          HISTORY = Path("lib/pricing/data/fedex-fuel-surcharge-history.json")
+
+          today = date.today()
+          monday = today - timedelta(days=today.weekday())
+          effective_date = monday.isoformat()
+
+          ground  = float(os.environ["GROUND"])
+          express = float(os.environ["EXPRESS"])
+
+          history = json.loads(HISTORY.read_text())
+
+          if history and history[0].get("effectiveDate") == effective_date:
+              print(f"Already up to date — {effective_date} is already the latest entry.")
+              Path("/tmp/fedex_changed").write_text("false")
+              sys.exit(0)
+
+          new_entry = {
+              "effectiveDate": effective_date,
+              "ground": ground,
+              "express": express,
+          }
+          history.insert(0, new_entry)
+
+          lines = [f"  {json.dumps(e)}" for e in history]
+          HISTORY.write_text("[\n" + ",\n".join(lines) + "\n]\n")
+
+          print(f"Updated — prepended {effective_date} (ground {ground*100:.2f}%, express {express*100:.2f}%)")
+          Path("/tmp/fedex_changed").write_text("true")
+          EOF
+        env:
+          GROUND:   ${{ steps.validate.outputs.ground }}
+          EXPRESS:  ${{ steps.validate.outputs.express }}
+
+      - name: Commit and push (if changed)
+        if: steps.update.outcome == 'success'
+        run: |
+          CHANGED=$(cat /tmp/fedex_changed 2>/dev/null || echo "false")
+          if [ "$CHANGED" != "true" ]; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/pricing/data/fedex-fuel-surcharge-history.json
+
+          GROUND="${{ steps.validate.outputs.ground }}"
+          EXPRESS="${{ steps.validate.outputs.express }}"
+          MONDAY=$(python3 -c "from datetime import date,timedelta; t=date.today(); print((t-timedelta(days=t.weekday())).isoformat())")
+
+          git commit -m "chore(pricing): FedEx fuel surcharge ${MONDAY} — ground $(python3 -c "print(f'{float('$GROUND')*100:.2f}%')"), express $(python3 -c "print(f'{float('$EXPRESS')*100:.2f}%')")"
+          git push
+          echo "✅ Committed and pushed."
