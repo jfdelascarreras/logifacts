@@ -636,8 +636,8 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
           <tbody className="divide-y divide-border">
             {[
               { carrier: 'UPS', service: 'Ground', cur: lv('upsGround'), prior: pv('upsGround'), idx: 'EIA Diesel' },
-              { carrier: 'FedEx', service: 'Ground', cur: lv('fedexGround'), prior: pv('fedexGround'), idx: 'EIA Diesel' },
               { carrier: 'UPS', service: 'Air', cur: lv('upsAir'), prior: pv('upsAir'), idx: 'EIA Jet' },
+              { carrier: 'FedEx', service: 'Ground', cur: lv('fedexGround'), prior: pv('fedexGround'), idx: 'EIA Diesel' },
               { carrier: 'FedEx', service: 'Express', cur: lv('fedexExpress'), prior: pv('fedexExpress'), idx: 'EIA Jet' },
             ].map((r) => {
               if (r.cur == null) return (
