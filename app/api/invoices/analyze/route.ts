@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { hasActiveInvoiceFilters } from '@/lib/invoices/analysis-summary'
 import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
 import {
+  invoiceRowsWriteEnabled,
+  syncUpsInvoiceRows,
+} from '@/lib/invoices/invoice-rows'
+import {
   getAnalysisCache,
   invalidateAnalysisCache,
   setAnalysisCache,
@@ -40,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: computed.message }, { status: computed.status })
   }
 
-  const { summaryCore, summaryForDashboard: summary, uploadsCount } = computed.data
+  const { summaryCore, summaryForDashboard: summary, uploadsCount, upsSyncTagged } = computed.data
   const appliedFilters = summary.appliedFilters
   const filtersActive = hasActiveInvoiceFilters(appliedFilters)
 
@@ -62,6 +66,8 @@ export async function POST(request: Request) {
   // Failures here are non-fatal: the dashboard reads invoice_upload_analyses, not this table.
   // A missing `account_number` column (migration not yet applied) should not block the refresh.
   let spendSyncWarning: string | undefined
+  let invoiceRowsSyncWarning: string | undefined
+  let invoiceRowsSynced: number | undefined
   if (!filtersActive) {
     const { error: clearSpendError } = await supabase
       .from('invoice_spend_by_date')
@@ -83,6 +89,15 @@ export async function POST(request: Request) {
       }
       if (spendUpsertError) {
         spendSyncWarning = `daily-spend upsert: ${spendUpsertError.message}`
+      }
+    }
+
+    if (invoiceRowsWriteEnabled() && upsSyncTagged.length > 0) {
+      const syncResult = await syncUpsInvoiceRows(supabase, user.id, upsSyncTagged)
+      if (syncResult.error) {
+        invoiceRowsSyncWarning = `invoice-rows sync: ${syncResult.error}`
+      } else {
+        invoiceRowsSynced = syncResult.rowCount
       }
     }
   }
@@ -126,6 +141,8 @@ export async function POST(request: Request) {
       uploadsAnalyzed: uploadsCount,
       summary,
       ...(spendSyncWarning ? { spendSyncWarning } : {}),
+      ...(invoiceRowsSyncWarning ? { invoiceRowsSyncWarning } : {}),
+      ...(invoiceRowsSynced != null ? { invoiceRowsSynced } : {}),
     },
     {
       headers: {

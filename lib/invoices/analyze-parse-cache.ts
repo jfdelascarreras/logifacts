@@ -4,6 +4,7 @@
  * Safe for serverless warm instances only — cold starts miss cache; TTL bounds memory.
  */
 import type { InvoiceRecord } from './csv'
+import type { UpsRowSyncInput } from './invoice-rows'
 
 export type PremiumParseIngestDiagnostics = {
   duplicateUploadRowsSkipped: number
@@ -13,6 +14,7 @@ export type PremiumParseIngestDiagnostics = {
 
 type CacheEntry = {
   fullRecords: InvoiceRecord[]
+  upsSyncTagged: UpsRowSyncInput[]
   profileCompanyName: string
   expiresAt: number
   ingestDiagnostics: PremiumParseIngestDiagnostics
@@ -44,7 +46,7 @@ export function analyzeParseCacheKey(userId: string, fingerprint: string): strin
 export function getAnalyzeParseCache(
   key: string,
   profileCompanyName: string
-): { fullRecords: InvoiceRecord[]; ingestDiagnostics: PremiumParseIngestDiagnostics } | null {
+): { fullRecords: InvoiceRecord[]; upsSyncTagged: UpsRowSyncInput[]; ingestDiagnostics: PremiumParseIngestDiagnostics } | null {
   pruneAnalyzeParseCache()
   const e = cache.get(key)
   if (!e || Date.now() > e.expiresAt) {
@@ -55,14 +57,19 @@ export function getAnalyzeParseCache(
     cache.delete(key)
     return null
   }
-  return { fullRecords: e.fullRecords, ingestDiagnostics: e.ingestDiagnostics }
+  return {
+    fullRecords: e.fullRecords,
+    upsSyncTagged: e.upsSyncTagged ?? [],
+    ingestDiagnostics: e.ingestDiagnostics,
+  }
 }
 
 export function setAnalyzeParseCache(
   key: string,
   profileCompanyName: string,
   fullRecords: InvoiceRecord[],
-  ingestDiagnostics?: PremiumParseIngestDiagnostics
+  ingestDiagnostics?: PremiumParseIngestDiagnostics,
+  upsSyncTagged: UpsRowSyncInput[] = []
 ): void {
   while (cache.size >= MAX_KEYS) {
     const oldest = cache.keys().next().value
@@ -71,6 +78,7 @@ export function setAnalyzeParseCache(
   }
   cache.set(key, {
     fullRecords,
+    upsSyncTagged,
     profileCompanyName,
     expiresAt: Date.now() + TTL_MS,
     ingestDiagnostics: ingestDiagnostics ? { ...ingestDiagnostics } : { ...ZERO_INGEST },

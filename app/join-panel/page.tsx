@@ -15,7 +15,7 @@ export default async function JoinPanelPage() {
   }
 
   return (
-    <AuthenticatedShell title="Join Panel" subtitle="Enroll in the Logifacts panel experience.">
+    <AuthenticatedShell title="Join Panel" subtitle="Enroll in the LogiFacts panel experience.">
       <JoinPanelSection />
     </AuthenticatedShell>
   )

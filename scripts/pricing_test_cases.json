@@ -1,0 +1,261 @@
+[
+  {
+    "label": "TC01 | Ground Daily Commercial | 60169→10001 | 1 lb | Zone 5",
+    "input": { "weightLbs": 1, "destinationZip": "10001", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 22.48 }
+  },
+  {
+    "label": "TC02 | Ground Daily Commercial | 60169→90210 | 5 lb | Zone 7",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 26.19 }
+  },
+  {
+    "label": "TC03 | Ground Daily Commercial | 60169→33101 | 10 lb | Zone 6",
+    "input": { "weightLbs": 10, "destinationZip": "33101", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 27.02 }
+  },
+  {
+    "label": "TC04 | Ground Daily Commercial | 60169→77001 | 20 lb | Zone 5",
+    "input": { "weightLbs": 20, "destinationZip": "77001", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 34.39 }
+  },
+  {
+    "label": "TC05 | Ground Daily Commercial | 60169→98101 | 50 lb | Zone 7",
+    "input": { "weightLbs": 50, "destinationZip": "98101", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 102.79 }
+  },
+  {
+    "label": "TC06 | Ground Daily Commercial | 60169→02101 | 70 lb | Zone 5",
+    "input": { "weightLbs": 70, "destinationZip": "02101", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 80.75 }
+  },
+  {
+    "label": "TC07 | Ground Daily Commercial | 60169→30301 | 100 lb | Zone 5",
+    "input": { "weightLbs": 100, "destinationZip": "30301", "service": "ground", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 167.25 }
+  },
+  {
+    "label": "TC08 | Ground Daily Commercial | 60169→85001 | 150 lb | Zone 7 | Declared $500",
+    "input": { "weightLbs": 150, "destinationZip": "85001", "service": "ground", "zoneChartPrefix": "601", "residential": false, "declaredValueDollars": 500 },
+    "tool_result": { "totalEstimatedCharge": 258.50 }
+  },
+  {
+    "label": "TC09 | Ground Daily Commercial | 60169→10001 | 2 lb | 12×10×8 dims | 5 lb billable",
+    "input": { "weightLbs": 2, "destinationZip": "10001", "service": "ground", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 12, "width": 10, "height": 8 } },
+    "tool_result": { "totalEstimatedCharge": 28.28 }
+  },
+  {
+    "label": "TC10 | Ground Daily Commercial | 60169→10001 | 3 lb | 24×18×12 dims | 24 lb DIM billable",
+    "input": { "weightLbs": 3, "destinationZip": "10001", "service": "ground", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 24, "width": 18, "height": 12 } },
+    "tool_result": { "totalEstimatedCharge": 43.37 }
+  },
+  {
+    "label": "TC11 | Ground Daily Residential | 60169→10001 | 1 lb | Zone 5",
+    "input": { "weightLbs": 1, "destinationZip": "10001", "service": "ground", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 31.03 }
+  },
+  {
+    "label": "TC12 | Ground Daily Residential | 60169→90210 | 5 lb | Zone 7",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "ground", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 32.69 }
+  },
+  {
+    "label": "TC13 | Ground Daily Residential | 60169→33101 | 15 lb | Zone 6 | NonStd packaging",
+    "input": { "weightLbs": 15, "destinationZip": "33101", "service": "ground", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true },
+    "tool_result": { "totalEstimatedCharge": 73.16 }
+  },
+  {
+    "label": "TC14 | Ground Daily Residential | 60169→77001 | 30 lb | Zone 5 | AddrCorr",
+    "input": { "weightLbs": 30, "destinationZip": "77001", "service": "ground", "zoneChartPrefix": "601", "residential": true, "addressCorrection": true },
+    "tool_result": { "totalEstimatedCharge": 77.59 }
+  },
+  {
+    "label": "TC15 | Ground Daily Residential | 60169→98101 | 10 lb | 18×14×10 dims | 12 lb DIM | Declared $200",
+    "input": { "weightLbs": 10, "destinationZip": "98101", "service": "ground", "zoneChartPrefix": "601", "residential": true, "dimensionsIn": { "length": 18, "width": 14, "height": 10 }, "declaredValueDollars": 200 },
+    "tool_result": { "totalEstimatedCharge": 46.24 }
+  },
+  {
+    "label": "TC16 | 3Day Daily Commercial | 60169→10001 | 2 lb | Zone 305",
+    "input": { "weightLbs": 2, "destinationZip": "10001", "service": "3day", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 44.02 }
+  },
+  {
+    "label": "TC17 | 3Day Daily Commercial | 60169→90210 | 5 lb | Zone 307",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "3day", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 75.31 }
+  },
+  {
+    "label": "TC18 | 3Day Daily Residential | 60169→33101 | 10 lb | Zone 306",
+    "input": { "weightLbs": 10, "destinationZip": "33101", "service": "3day", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 104.20 }
+  },
+  {
+    "label": "TC19 | 3Day Daily Commercial | 60169→77001 | 25 lb | Zone 305 | 14×10×8 dims | Declared $300 | Markup 10%",
+    "input": { "weightLbs": 25, "destinationZip": "77001", "service": "3day", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 14, "width": 10, "height": 8 }, "declaredValueDollars": 300 },
+    "markupPct": 10,
+    "tool_result": { "totalEstimatedCharge": 134.25 }
+  },
+  {
+    "label": "TC20 | 3Day Daily Residential | 60169→98101 | 50 lb | Zone 307 | NonStd packaging",
+    "input": { "weightLbs": 50, "destinationZip": "98101", "service": "3day", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true },
+    "tool_result": { "totalEstimatedCharge": 423.13 }
+  },
+  {
+    "label": "TC21 | 2Day Daily Commercial | 60169→10001 | 1 lb | Zone 205",
+    "input": { "weightLbs": 1, "destinationZip": "10001", "service": "2day", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 51.43 }
+  },
+  {
+    "label": "TC22 | 2Day Daily Commercial | 60169→90210 | 3 lb | Zone 207",
+    "input": { "weightLbs": 3, "destinationZip": "90210", "service": "2day", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 81.45 }
+  },
+  {
+    "label": "TC23 | 2Day Daily Residential | 60169→33101 | 8 lb | Zone 206 | Declared $100",
+    "input": { "weightLbs": 8, "destinationZip": "33101", "service": "2day", "zoneChartPrefix": "601", "residential": true, "declaredValueDollars": 100 },
+    "tool_result": { "totalEstimatedCharge": 139.17 }
+  },
+  {
+    "label": "TC24 | 2Day Daily Commercial | 60169→77001 | 15 lb | 20×15×10 dims | 16 lb DIM | Markup 15%",
+    "input": { "weightLbs": 15, "destinationZip": "77001", "service": "2day", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 20, "width": 15, "height": 10 } },
+    "markupPct": 15,
+    "tool_result": { "totalEstimatedCharge": 145.14 }
+  },
+  {
+    "label": "TC25 | 2Day Daily Residential | 60169→98101 | 30 lb | Zone 207 | NonStd+AddrCorr | Declared $500",
+    "input": { "weightLbs": 30, "destinationZip": "98101", "service": "2day", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true, "addressCorrection": true, "declaredValueDollars": 500 },
+    "tool_result": { "totalEstimatedCharge": 455.54 }
+  },
+  {
+    "label": "TC26 | 2DayAM Daily Commercial | 60169→10001 | 2 lb | Zone 245 | NO RATE AVAILABLE",
+    "input": { "weightLbs": 2, "destinationZip": "10001", "service": "2day_am", "zoneChartPrefix": "601", "residential": false },
+    "expectError": true,
+    "tool_result": {}
+  },
+  {
+    "label": "TC27 | 2DayAM Daily Commercial | 60169→90210 | 5 lb | Zone 247",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "2day_am", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 118.22 }
+  },
+  {
+    "label": "TC28 | 2DayAM Daily Residential | 60169→33101 | 12 lb | Zone 246",
+    "input": { "weightLbs": 12, "destinationZip": "33101", "service": "2day_am", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 205.70 }
+  },
+  {
+    "label": "TC29 | 2DayAM Daily Commercial | 60169→77001 | 20 lb | 16×12×8 dims | Declared $400 | Markup 20%",
+    "input": { "weightLbs": 20, "destinationZip": "77001", "service": "2day_am", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 16, "width": 12, "height": 8 }, "declaredValueDollars": 400 },
+    "markupPct": 20,
+    "tool_result": { "totalEstimatedCharge": 204.25 }
+  },
+  {
+    "label": "TC30 | 2DayAM Daily Residential | 60169→02101 | 40 lb | Zone 245 | NonStd packaging",
+    "input": { "weightLbs": 40, "destinationZip": "02101", "service": "2day_am", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true },
+    "tool_result": { "totalEstimatedCharge": 383.38 }
+  },
+  {
+    "label": "TC31 | NDA Saver Daily Commercial | 60169→10001 | 1 lb | Zone 135",
+    "input": { "weightLbs": 1, "destinationZip": "10001", "service": "nda_saver", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 114.38 }
+  },
+  {
+    "label": "TC32 | NDA Saver Daily Commercial | 60169→90210 | 5 lb | Zone 137",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "nda_saver", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 180.74 }
+  },
+  {
+    "label": "TC33 | NDA Saver Daily Residential | 60169→30301 | 10 lb | Zone 135",
+    "input": { "weightLbs": 10, "destinationZip": "30301", "service": "nda_saver", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 221.04 }
+  },
+  {
+    "label": "TC34 | NDA Saver Daily Commercial | 60169→85001 | 20 lb | 18×14×10 dims | Zone 137 | Markup 5%",
+    "input": { "weightLbs": 20, "destinationZip": "85001", "service": "nda_saver", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 18, "width": 14, "height": 10 } },
+    "markupPct": 5,
+    "tool_result": { "totalEstimatedCharge": 372.61 }
+  },
+  {
+    "label": "TC35 | NDA Saver Daily Residential | 60169→98101 | 35 lb | Zone 137 | NonStd+AddrCorr | Declared $1000",
+    "input": { "weightLbs": 35, "destinationZip": "98101", "service": "nda_saver", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true, "addressCorrection": true, "declaredValueDollars": 1000 },
+    "tool_result": { "totalEstimatedCharge": 634.37 }
+  },
+  {
+    "label": "TC36 | NDA Daily Commercial | 60169→10001 | 1 lb | Zone 105",
+    "input": { "weightLbs": 1, "destinationZip": "10001", "service": "nda", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 130.29 }
+  },
+  {
+    "label": "TC37 | NDA Daily Commercial | 60169→90210 | 3 lb | Zone 107",
+    "input": { "weightLbs": 3, "destinationZip": "90210", "service": "nda", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 182.50 }
+  },
+  {
+    "label": "TC38 | NDA Daily Residential | 60169→33101 | 7 lb | Zone 106",
+    "input": { "weightLbs": 7, "destinationZip": "33101", "service": "nda", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 222.54 }
+  },
+  {
+    "label": "TC39 | NDA Daily Commercial | 60169→77001 | 15 lb | 22×16×12 dims | 22 lb DIM | Declared $800 | Markup 25%",
+    "input": { "weightLbs": 15, "destinationZip": "77001", "service": "nda", "zoneChartPrefix": "601", "residential": false, "dimensionsIn": { "length": 22, "width": 16, "height": 12 }, "declaredValueDollars": 800 },
+    "markupPct": 25,
+    "tool_result": { "totalEstimatedCharge": 384.70 }
+  },
+  {
+    "label": "TC40 | NDA Daily Residential | 60169→98101 | 50 lb | Zone 107 | NonStd packaging",
+    "input": { "weightLbs": 50, "destinationZip": "98101", "service": "nda", "zoneChartPrefix": "601", "residential": true, "nonStandardPackaging": true },
+    "tool_result": { "totalEstimatedCharge": 758.39 }
+  },
+  {
+    "label": "TC41 | Ground SmBiz Commercial | 60169→10001 | 2 lb | Zone 5",
+    "input": { "weightLbs": 2, "destinationZip": "10001", "service": "ground", "rateType": "smallBusiness", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 11.14 }
+  },
+  {
+    "label": "TC42 | Ground SmBiz Residential | 60169→90210 | 5 lb | Zone 7",
+    "input": { "weightLbs": 5, "destinationZip": "90210", "service": "ground", "rateType": "smallBusiness", "zoneChartPrefix": "601", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 17.57 }
+  },
+  {
+    "label": "TC43 | 2Day SmBiz Commercial | 60169→33101 | 10 lb | Zone 206",
+    "input": { "weightLbs": 10, "destinationZip": "33101", "service": "2day", "rateType": "smallBusiness", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 43.27 }
+  },
+  {
+    "label": "TC44 | NDA SmBiz Commercial | 60169→77001 | 15 lb | Zone 105",
+    "input": { "weightLbs": 15, "destinationZip": "77001", "service": "nda", "rateType": "smallBusiness", "zoneChartPrefix": "601", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 83.03 }
+  },
+  {
+    "label": "TC45 | 3Day SmBiz Residential | 60169→98101 | 20 lb | 12×10×8 dims | NonStd | Declared $200 | Markup 10%",
+    "input": { "weightLbs": 20, "destinationZip": "98101", "service": "3day", "rateType": "smallBusiness", "zoneChartPrefix": "601", "residential": true, "dimensionsIn": { "length": 12, "width": 10, "height": 8 }, "nonStandardPackaging": true, "declaredValueDollars": 200 },
+    "markupPct": 10,
+    "tool_result": { "totalEstimatedCharge": 66.62 }
+  },
+  {
+    "label": "TC46 | Ground Daily Commercial | 10001→90210 | 1 lb | Zone 8",
+    "input": { "weightLbs": 1, "destinationZip": "90210", "service": "ground", "zoneChartPrefix": "100", "residential": false },
+    "tool_result": { "totalEstimatedCharge": 19.16 }
+  },
+  {
+    "label": "TC47 | Ground Daily Residential | 90210→60169 | 5 lb | Zone 7",
+    "input": { "weightLbs": 5, "destinationZip": "60169", "service": "ground", "zoneChartPrefix": "902", "residential": true },
+    "tool_result": { "totalEstimatedCharge": 32.69 }
+  },
+  {
+    "label": "TC48 | Ground Daily Commercial | 77001→02101 | 10 lb | 30×20×15 dims | 41 lb DIM | Zone 7",
+    "input": { "weightLbs": 10, "destinationZip": "02101", "service": "ground", "zoneChartPrefix": "770", "residential": false, "dimensionsIn": { "length": 30, "width": 20, "height": 15 } },
+    "tool_result": { "totalEstimatedCharge": 86.70 }
+  },
+  {
+    "label": "TC49 | NDA Saver Daily Commercial | 33101→85001 | 8 lb | Zone 138 | Declared $1500 | Markup 30%",
+    "input": { "weightLbs": 8, "destinationZip": "85001", "service": "nda_saver", "zoneChartPrefix": "331", "residential": false, "declaredValueDollars": 1500 },
+    "markupPct": 30,
+    "tool_result": { "totalEstimatedCharge": 264.14 }
+  },
+  {
+    "label": "TC50 | NDA SmBiz Residential | 98101→30301 | 25 lb | 36×24×18 dims | 94 lb DIM | Declared $2500 | NonStd+AddrCorr | Markup 20%",
+    "input": { "weightLbs": 25, "destinationZip": "30301", "service": "nda", "rateType": "smallBusiness", "zoneChartPrefix": "981", "residential": true, "dimensionsIn": { "length": 36, "width": 24, "height": 18 }, "declaredValueDollars": 2500, "nonStandardPackaging": true, "addressCorrection": true },
+    "markupPct": 20,
+    "tool_result": { "totalEstimatedCharge": 574.54 }
+  }
+]

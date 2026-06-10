@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CarrierLogo } from '@/app/components/pricing/carrier-logo'
 import { cn } from '@/lib/utils'
 import type { FuelRateObservation } from '@/lib/pricing/ups-fuel-surcharge-history'
 import type { EiaObservation } from '@/lib/fuel-surcharges/eia'
@@ -264,51 +265,73 @@ function SvgChart({
 
 function SectionHead({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">{children}</span>
-      <span className="flex-1 h-px bg-border" />
+    <div className="flex items-center gap-3 mb-1">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/50 whitespace-nowrap">{children}</span>
+      <span className="flex-1 h-px bg-border/60" />
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KPI card (with carrier left-border color)
+// Carrier surcharge card — uniform treatment, no colored borders, no LIVE badge
 // ─────────────────────────────────────────────────────────────────────────────
 
-function KpiCard({
-  label, value, sub, delta, contracted, accentColor, extra, live = false,
-}: {
-  label: string; value: string; sub?: string; delta?: string | null
-  contracted?: string | null; accentColor: string; extra?: string; live?: boolean
-}) {
-  const deltaUp = delta?.startsWith('+')
+function Sparkline({ data, color }: { data: (number | null)[]; color: string }) {
+  const valid = data.filter((v): v is number => v != null)
+  if (valid.length < 2) return null
+  const W = 88, H = 38
+  const min = Math.min(...valid), max = Math.max(...valid)
+  const range = max - min || 0.5
+  const pts = data
+    .map((v, i) => v != null
+      ? { x: (i / (data.length - 1)) * W, y: H - 4 - ((v - min) / range) * (H - 10) }
+      : null)
+    .filter(Boolean) as { x: number; y: number }[]
+  if (pts.length < 2) return null
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const fill = `${line} L${pts.at(-1)!.x.toFixed(1)} ${H} L${pts[0]!.x.toFixed(1)} ${H}Z`
+  const last = pts.at(-1)!
   return (
-    <div
-      className="bg-card rounded-lg px-3.5 py-3 border-l-[3px] relative overflow-hidden"
-      style={{ borderLeftColor: accentColor, borderTop: '0.5px solid var(--border)', borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)' }}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{label}</div>
-        {live && value !== '—' && (
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
-            <span className="text-[9px] font-bold text-[#00B4C5] tracking-widest uppercase">Live</span>
-          </span>
-        )}
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 self-center">
+      <path d={fill} fill={color} opacity={0.07} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
+      <circle cx={last.x} cy={last.y} r={2.5} fill={color} opacity={0.9} />
+    </svg>
+  )
+}
+
+function CarrierLabel({ carrier }: { carrier: string }) {
+  const id = carrier === 'UPS' ? 'ups' : carrier === 'FedEx' ? 'fedex' : null
+  if (id) return <CarrierLogo carrier={id} size="sm" />
+  return <span className="text-[11px] font-bold text-muted-foreground">{carrier}</span>
+}
+
+function SurchargeCard({
+  carrier, service, value, contracted, delta, sparkData, sparkColor,
+}: {
+  carrier: string; service: string; value: string
+  contracted: string | null; delta: number | null
+  sparkData?: (number | null)[]; sparkColor?: string
+}) {
+  const isUp = delta != null && delta > 0.05
+  const isDown = delta != null && delta < -0.05
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <CarrierLabel carrier={carrier} />
+          <span className="text-xs text-muted-foreground">{service}</span>
+        </div>
+        {isUp && <span className="text-xs font-medium text-red-500">▲ +{delta!.toFixed(2)}pp</span>}
+        {isDown && <span className="text-xs font-medium text-emerald-600">▼ {delta!.toFixed(2)}pp</span>}
+        {!isUp && !isDown && delta != null && <span className="text-[10px] text-muted-foreground">flat</span>}
       </div>
-      <div className="font-heading text-2xl font-bold leading-none" style={{ color: 'var(--foreground)' }}>{value}</div>
-      {sub && <div className="text-[10px] text-muted-foreground mt-1">{sub}</div>}
-      {delta && (
-        <div className={cn('text-[11px] font-semibold mt-1', deltaUp ? 'text-destructive' : 'text-[#10B981]')}>
-          {deltaUp ? '▲' : '▼'} {delta} vs prior wk
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-2xl font-semibold tracking-tight text-foreground">{value}</div>
         </div>
-      )}
-      {extra && <div className="text-[11px] mt-1" style={{ color: '#00B4C5' }}>{extra}</div>}
-      {contracted && (
-        <div className="text-[11px] font-medium mt-1" style={{ color: '#00B4C5' }}>
-          Contracted: {contracted}
-        </div>
-      )}
+        {sparkData && sparkColor && <Sparkline data={sparkData} color={sparkColor} />}
+      </div>
     </div>
   )
 }
@@ -370,6 +393,7 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
   const [aiBrief, setAiBrief] = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [briefOpen, setBriefOpen] = useState(false)
 
   const combined = data ? buildCombined(data.ups, data.fedex, data.eia) : []
   const slice = range === 0 ? combined : combined.slice(-range)
@@ -436,8 +460,8 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
   }, [combined, spend, contract.discountPct])
 
   useEffect(() => {
-    if (combined.length > 0 && aiBrief === null && !aiLoading) void runBrief()
-  }, [combined.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (briefOpen && aiBrief === null && !aiLoading) void runBrief()
+  }, [briefOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!data) {
     return <div className="flex h-48 items-center justify-center text-sm text-muted-foreground animate-pulse">Loading live rates…</div>
@@ -446,127 +470,179 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
   return (
     <div className="space-y-5">
 
-      {/* AI Brief */}
-      <div className="rounded-xl bg-gradient-midnight px-5 py-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="bg-[#E8453C] text-white text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider">AI BRIEF</span>
-          <span className="text-sm font-semibold text-white flex-1">Weekly Intelligence — LogiFacts Analysis Engine</span>
-          <button
-            onClick={() => void runBrief()}
-            disabled={aiLoading}
-            className="border border-[rgba(168,196,224,.3)] text-[#A8C4E0] text-[11px] px-3 py-1 rounded-md hover:border-[#00B4C5] hover:text-[#00B4C5] transition-colors disabled:opacity-50"
-          >
-            {aiLoading ? '…' : '↻ Refresh'}
-          </button>
-        </div>
-        {aiLoading && <p className="text-[13px] text-[#00B4C5] italic">Analyzing current week data…</p>}
-        {aiError && <p className="text-[12px] text-[#FCA5A5]">{aiError.includes('ANTHROPIC_API_KEY') ? 'Add ANTHROPIC_API_KEY to your environment to enable AI briefs.' : aiError}</p>}
-        {aiBrief && !aiLoading && <p className="text-[13px] text-[#A8C4E0] leading-relaxed whitespace-pre-wrap">{aiBrief}</p>}
-      </div>
-
-      {/* Spike alert */}
-      {spike && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-[12px] text-amber-800">
-          <strong>⚑ RATE SPIKE ALERT:</strong> UPS Ground surcharge jumped {(upsGCur! - upsGPrior!).toFixed(2)}pp this week ({upsGPrior}% → {upsGCur}%). At ${spend.toLocaleString()} weekly spend, this is ~${((upsGCur! - upsGPrior!) / 100 * spend).toFixed(0)} in additional weekly fuel cost.
-        </div>
-      )}
-
-      {/* Contract bar */}
-      <div className="flex flex-wrap items-center gap-3 bg-card rounded-lg px-4 py-2.5 border border-border">
-        <span className="text-[12px] font-semibold text-foreground">Contracted Rates</span>
-        <label className="relative inline-block w-10 h-[22px] cursor-pointer">
-          <input type="checkbox" className="sr-only" checked={contractOn} onChange={e => setContractOn(e.target.checked)} />
-          <span className={cn('absolute inset-0 rounded-full transition-colors', contractOn ? 'bg-[#00B4C5]' : 'bg-border')} />
-          <span className={cn('absolute top-[3px] left-[3px] w-4 h-4 bg-white rounded-full transition-transform shadow-sm', contractOn && 'translate-x-[18px]')} />
-        </label>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground">Discount</span>
-          <input
-            type="number" min={0} max={100} step={1} value={contract.discountPct}
-            onChange={e => saveContract({ ...contract, discountPct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
-            className="w-14 border border-input rounded px-2 py-0.5 text-[12px] font-semibold bg-background text-center"
-          />
-          <span className="text-[11px] text-muted-foreground">%</span>
-        </div>
-        {contractOn && upsGCur != null && contracted(upsGCur) != null && (
-          <span className="ml-auto text-[11px] font-medium" style={{ color: '#00B4C5' }}>
-            UPS Ground: {upsGCur}% list → {contracted(upsGCur)}% contracted (saves {(upsGCur - contracted(upsGCur)!).toFixed(2)}pp)
+      {/* Context strip — persistent state, not controls */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border pb-3 text-xs text-muted-foreground">
+        {latest?.week && <span>Week of {latest.week}</span>}
+        {latest?.week && <span className="text-border select-none">·</span>}
+        <label className="flex cursor-pointer select-none items-center gap-1.5">
+          <span className="relative inline-block h-[14px] w-6">
+            <input type="checkbox" className="sr-only" checked={contractOn} onChange={e => setContractOn(e.target.checked)} />
+            <span className={cn('absolute inset-0 rounded-full transition-colors', contractOn ? 'bg-sky-500' : 'bg-border')} />
+            <span className={cn('absolute top-[2px] left-[2px] h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform', contractOn && 'translate-x-[10px]')} />
           </span>
+          Contracted rates
+        </label>
+        {contractOn && (
+          <>
+            <span className="text-border select-none">·</span>
+            <span className="flex items-center gap-1">
+              Discount
+              <input
+                type="number" min={0} max={100} step={1} value={contract.discountPct}
+                onChange={e => saveContract({ ...contract, discountPct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                className="w-9 rounded border border-input bg-background px-1 py-0 text-center text-xs font-medium"
+              />
+              %
+            </span>
+            {lv('upsGround') != null && contracted(lv('upsGround')) != null && (
+              <>
+                <span className="text-border select-none">·</span>
+                <span>
+                  <span style={{ color: '#C9941A' }} className="font-bold">UPS</span> Ground:{' '}
+                  <span className="font-medium text-foreground">{lv('upsGround')!.toFixed(2)}% list</span>
+                  {' → '}
+                  <span className="font-medium text-sky-600">{contracted(lv('upsGround'))!.toFixed(2)}% contracted</span>
+                  {' '}(saves {(lv('upsGround')! - contracted(lv('upsGround'))!).toFixed(2)}pp)
+                </span>
+              </>
+            )}
+          </>
         )}
       </div>
 
-      {/* Impact calculator */}
-      <SectionHead>Dollar Impact Calculator</SectionHead>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="bg-card rounded-lg px-4 py-3 border border-border">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Weekly Carrier Spend</div>
-          <input
-            type="number" min={0} step={500} value={contract.weeklySpend}
-            onChange={e => saveContract({ ...contract, weeklySpend: parseFloat(e.target.value) || 0 })}
-            className="w-full border border-input rounded px-3 py-1.5 text-[15px] font-bold text-foreground bg-background focus:ring-2 focus:ring-ring outline-none"
+      {/* Spike alert — operational, not decorative */}
+      {spike && (
+        <div className="flex items-start gap-3 rounded-md border border-amber-300/50 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-400">
+          <span className="shrink-0 font-semibold">Rate spike</span>
+          <span>
+            <span style={{ color: '#C9941A' }} className="font-bold">UPS</span> Ground jumped {(upsGCur! - upsGPrior!).toFixed(2)}pp this week ({upsGPrior}% → {upsGCur}%) —
+            approximately {fmtUSD((upsGCur! - upsGPrior!) / 100 * spend)} in additional weekly fuel cost at your spend level.
+          </span>
+        </div>
+      )}
+
+      {/* EIA Index band — causal/leading data, visually distinct from carrier cards */}
+      <div className="rounded-lg border border-border/60 bg-muted/40 px-5 py-3.5">
+        <div className="mb-2.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+          Fuel Index — Leading Indicator
+        </div>
+        <div className="flex flex-wrap gap-x-10 gap-y-2">
+          <div className="flex items-baseline gap-2.5">
+            <span className="text-xs font-medium text-muted-foreground">EIA Diesel</span>
+            {lv('eia') != null ? (
+              <>
+                <span className="text-sm font-semibold text-foreground">${lv('eia')!.toFixed(3)}</span>
+                {lagDiff != null && (
+                  <span className={cn('text-xs font-medium', lagDiff > 0 ? 'text-red-500' : 'text-emerald-600')}>
+                    {lagDiff > 0 ? '▲' : '▼'} {lagDiff > 0 ? '+' : ''}{lagDiff.toFixed(3)} vs 5 wks ago
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">→ sets surcharge in approx. 5–6 weeks</span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">— No data</span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-2.5">
+            <span className="text-xs font-medium text-muted-foreground">EIA Jet Fuel</span>
+            <span className="text-xs text-muted-foreground">— No data</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Current Surcharges — 2×2, uniform cards, no colored borders, no LIVE */}
+      <div>
+        <div className="mb-3 text-xs font-medium text-muted-foreground">Current Surcharges</div>
+        <div className="grid grid-cols-2 gap-3">
+          <SurchargeCard
+            carrier="UPS" service="Ground"
+            value={lv('upsGround') != null ? lv('upsGround')!.toFixed(2) + '%' : '—'}
+            contracted={contractOn && contracted(lv('upsGround')) != null ? contracted(lv('upsGround'))!.toFixed(2) + '%' : null}
+            delta={prior?.upsGround != null && latest?.upsGround != null ? latest.upsGround - prior.upsGround : null}
+            sparkData={slice.map(r => r.upsGround)} sparkColor={CARRIER_COLORS.ups}
           />
-          <div className="text-[10px] text-muted-foreground mt-1">Club Colors avg: ~$19,000/wk</div>
+          <SurchargeCard
+            carrier="FedEx" service="Ground"
+            value={lv('fedexGround') != null ? lv('fedexGround')!.toFixed(2) + '%' : '—'}
+            contracted={contractOn && contracted(lv('fedexGround')) != null ? contracted(lv('fedexGround'))!.toFixed(2) + '%' : null}
+            delta={prior?.fedexGround != null && latest?.fedexGround != null ? latest.fedexGround - prior.fedexGround : null}
+            sparkData={slice.map(r => r.fedexGround)} sparkColor={CARRIER_COLORS.fedex}
+          />
+          <SurchargeCard
+            carrier="UPS" service="Air"
+            value={lv('upsAir') != null ? lv('upsAir')!.toFixed(2) + '%' : '—'}
+            contracted={contractOn && contracted(lv('upsAir')) != null ? contracted(lv('upsAir'))!.toFixed(2) + '%' : null}
+            delta={prior?.upsAir != null && latest?.upsAir != null ? latest.upsAir - prior.upsAir : null}
+            sparkData={slice.map(r => r.upsAir)} sparkColor={CARRIER_COLORS.ups}
+          />
+          <SurchargeCard
+            carrier="FedEx" service="Express"
+            value={lv('fedexExpress') != null ? lv('fedexExpress')!.toFixed(2) + '%' : '—'}
+            contracted={contractOn && contracted(lv('fedexExpress')) != null ? contracted(lv('fedexExpress'))!.toFixed(2) + '%' : null}
+            delta={prior?.fedexExpress != null && latest?.fedexExpress != null ? latest.fedexExpress - prior.fedexExpress : null}
+            sparkData={slice.map(r => r.fedexExpress)} sparkColor={CARRIER_COLORS.fedex}
+          />
         </div>
-        <div className="bg-card rounded-lg px-4 py-3 border border-border">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Fuel Cost — List Rate</div>
-          <div className="text-[22px] font-bold leading-none text-destructive">{listCost != null ? fmtUSD(listCost) + '/wk' : '—'}</div>
-          <div className="text-[10px] text-muted-foreground mt-1">Without contract discount</div>
-          {listCost != null && <div className="text-[12px] font-semibold mt-1 text-muted-foreground">~{fmtUSDK(listCost * 52)}/year</div>}
-        </div>
-        <div className="bg-card rounded-lg px-4 py-3 border border-border">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Fuel Cost — Contracted</div>
-          <div className="text-[22px] font-bold leading-none text-[#10B981]">{contractedCost != null ? fmtUSD(contractedCost) + '/wk' : '—'}</div>
-          <div className="text-[10px] text-muted-foreground mt-1">{contract.discountPct}% off list rate</div>
-          {savings != null && <div className="text-[12px] font-semibold mt-1 text-[#00B4C5]">Saves {fmtUSD(savings)}/wk vs list</div>}
+        <p className="mt-2.5 text-xs text-muted-foreground">OnTrac · Spee-Dee — surcharges not yet tracked</p>
+      </div>
+
+      {/* Dollar Exposure — asymmetric: small input, dominant outputs */}
+      <div className="rounded-lg border border-border bg-card px-5 py-4">
+        <div className="mb-4 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Weekly Exposure</div>
+        <div className="flex flex-wrap items-start gap-8">
+          <div className="shrink-0">
+            <div className="mb-1.5 text-xs text-muted-foreground">Weekly carrier spend</div>
+            <input
+              type="number" min={0} step={500} value={contract.weeklySpend}
+              onChange={e => saveContract({ ...contract, weeklySpend: parseFloat(e.target.value) || 0 })}
+              className="w-36 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-semibold text-foreground outline-none focus:ring-1 focus:ring-ring"
+            />
+            <div className="mt-1.5 text-[10px] text-muted-foreground">avg ~$19K/wk</div>
+          </div>
+          <div className="flex flex-wrap gap-8">
+            <div>
+              <div className="mb-1.5 text-xs text-muted-foreground">List rate fuel cost</div>
+              <div className="text-2xl font-semibold tracking-tight text-foreground">
+                {listCost != null ? fmtUSD(listCost) : '—'}
+                <span className="ml-0.5 text-sm font-normal text-muted-foreground">/wk</span>
+              </div>
+              {listCost != null && <div className="mt-1 text-xs text-muted-foreground">~{fmtUSDK(listCost * 52)}/yr</div>}
+            </div>
+            {contractedCost != null && savings != null && (
+              <div className="border-l border-border pl-8">
+                <div className="mb-1.5 text-xs text-muted-foreground">Contracted</div>
+                <div className="text-2xl font-semibold tracking-tight text-emerald-600">
+                  {fmtUSD(contractedCost)}
+                  <span className="ml-0.5 text-sm font-normal text-muted-foreground">/wk</span>
+                </div>
+                <div className="mt-1 text-xs font-medium text-emerald-600">Saves {fmtUSD(savings)}/wk</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Diesel KPIs */}
-      <SectionHead>Diesel · Ground Carriers</SectionHead>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="EIA Diesel" value={lv('eia') != null ? '$' + lv('eia')!.toFixed(3) : '—'} sub="$/gal · this week" accentColor={CARRIER_COLORS.eiaD} extra="→ sets rates in 5-6 wks" live />
-        <KpiCard label="UPS Ground" value={fmtPct(lv('upsGround') != null ? lv('upsGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups} live
-          delta={prior?.upsGround != null && latest?.upsGround != null ? fmtDelta((latest.upsGround - prior.upsGround) / 100) : null}
-          contracted={contractOn && contracted(lv('upsGround')) != null ? contracted(lv('upsGround'))! + '%' : null} />
-        <KpiCard label="FedEx Ground" value={fmtPct(lv('fedexGround') != null ? lv('fedexGround')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex} live
-          delta={prior?.fedexGround != null && latest?.fedexGround != null ? fmtDelta((latest.fedexGround - prior.fedexGround) / 100) : null}
-          contracted={contractOn && contracted(lv('fedexGround')) != null ? contracted(lv('fedexGround'))! + '%' : null} />
-        <KpiCard label="OnTrac" value="—" sub="Not tracked" accentColor={CARRIER_COLORS.ontrac} />
-        <KpiCard label="Spee-Dee" value="—" sub="Not tracked" accentColor={CARRIER_COLORS.speedee} />
-      </div>
-
-      {/* Air KPIs */}
-      <SectionHead>Jet Fuel · Air Carriers</SectionHead>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <KpiCard label="EIA Jet Fuel" value="—" sub="$/gal · this week" accentColor={CARRIER_COLORS.eiaJ} extra="→ sets air surcharges" />
-        <KpiCard label="UPS Air" value={fmtPct(lv('upsAir') != null ? lv('upsAir')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.ups} live
-          delta={prior?.upsAir != null && latest?.upsAir != null ? fmtDelta((latest.upsAir - prior.upsAir) / 100) : null}
-          contracted={contractOn && contracted(lv('upsAir')) != null ? contracted(lv('upsAir'))! + '%' : null} />
-        <KpiCard label="FedEx Express" value={fmtPct(lv('fedexExpress') != null ? lv('fedexExpress')! / 100 : null)} sub="% of base" accentColor={CARRIER_COLORS.fedex} live
-          delta={prior?.fedexExpress != null && latest?.fedexExpress != null ? fmtDelta((latest.fedexExpress - prior.fedexExpress) / 100) : null}
-          contracted={contractOn && contracted(lv('fedexExpress')) != null ? contracted(lv('fedexExpress'))! + '%' : null} />
-      </div>
-
-      {/* Range buttons */}
-      <div className="flex gap-2">
+      {/* Range selector — understated, not pill buttons */}
+      <div className="flex items-center gap-1.5">
         {([13, 26, 52, 0] as RangeWeeks[]).map(w => (
           <button
             key={w}
             onClick={() => setRange(w)}
             className={cn(
-              'px-4 py-1.5 rounded-full border text-[11px] font-semibold transition-colors',
-              range === w ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-foreground/30'
+              'rounded border px-3 py-1 text-xs font-medium transition-colors',
+              range === w
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border bg-card text-muted-foreground hover:border-foreground/40 hover:text-foreground'
             )}
-          >{w === 0 ? 'All Time' : w === 52 ? '1 Year' : `${w} Weeks`}</button>
+          >{w === 0 ? 'All time' : w === 52 ? '1 year' : `${w}w`}</button>
         ))}
       </div>
 
-      {/* 2x2 chart grid */}
+      {/* 2×2 charts */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* EIA Diesel */}
-        <div className="bg-card rounded-lg p-4 border border-border">
-          <h3 className="text-[12px] font-bold text-foreground mb-3">
-            EIA Diesel Price <span className="font-normal text-muted-foreground">$/gal</span>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-medium text-foreground">
+            EIA Diesel <span className="font-normal text-muted-foreground">$/gal</span>
           </h3>
           <SvgChart
             labels={labels}
@@ -575,11 +651,9 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
             height={200}
           />
         </div>
-
-        {/* UPS Ground */}
-        <div className="bg-card rounded-lg p-4 border border-border">
-          <h3 className="text-[12px] font-bold text-foreground mb-3">
-            UPS Ground Surcharge <span className="font-normal text-muted-foreground">list {contractOn ? 'vs contracted' : ''}</span>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-medium text-foreground">
+            <span style={{ color: '#C9941A' }}>UPS</span> Ground <span className="font-normal text-muted-foreground">% of base{contractOn ? ' — list vs contracted' : ''}</span>
           </h3>
           <SvgChart
             labels={labels}
@@ -591,11 +665,9 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
             height={200}
           />
         </div>
-
-        {/* FedEx Ground */}
-        <div className="bg-card rounded-lg p-4 border border-border">
-          <h3 className="text-[12px] font-bold text-foreground mb-3">
-            FedEx Ground Surcharge <span className="font-normal text-muted-foreground">% of base</span>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-medium text-foreground">
+            <span style={{ color: '#4D148C' }}>Fed</span><span style={{ color: '#FF6200' }}>Ex</span> Ground <span className="font-normal text-muted-foreground">% of base</span>
           </h3>
           <SvgChart
             labels={labels}
@@ -604,11 +676,9 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
             height={200}
           />
         </div>
-
-        {/* Air comparison */}
-        <div className="bg-card rounded-lg p-4 border border-border">
-          <h3 className="text-[12px] font-bold text-foreground mb-3">
-            Air Surcharge Comparison <span className="font-normal text-muted-foreground">FedEx Express vs UPS Air</span>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-medium text-foreground">
+            Air Surcharges <span className="font-normal text-muted-foreground"><span style={{ color: '#4D148C' }}>Fed</span><span style={{ color: '#FF6200' }}>Ex</span> Express vs <span style={{ color: '#C9941A' }}>UPS</span> Air</span>
           </h3>
           <SvgChart
             labels={labels}
@@ -622,70 +692,113 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
         </div>
       </div>
 
-      {/* Weekly snapshot table */}
-      <SectionHead>Weekly Rate Snapshot</SectionHead>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-[11.5px]">
-          <thead>
-            <tr className="bg-muted/40 border-b border-border">
-              {['Carrier', 'Service', 'This Week (List)', 'Contracted', 'vs Prior Wk', 'Index', '5-Wk Forecast'].map(h => (
-                <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {[
-              { carrier: 'UPS', service: 'Ground', cur: lv('upsGround'), prior: pv('upsGround'), idx: 'EIA Diesel' },
-              { carrier: 'UPS', service: 'Air', cur: lv('upsAir'), prior: pv('upsAir'), idx: 'EIA Jet' },
-              { carrier: 'FedEx', service: 'Ground', cur: lv('fedexGround'), prior: pv('fedexGround'), idx: 'EIA Diesel' },
-              { carrier: 'FedEx', service: 'Express', cur: lv('fedexExpress'), prior: pv('fedexExpress'), idx: 'EIA Jet' },
-            ].map((r) => {
-              if (r.cur == null) return (
-                <tr key={r.carrier + r.service} className="hover:bg-muted/20">
-                  <td className="px-3 py-2 font-semibold">{r.carrier}</td>
-                  <td className="px-3 py-2">{r.service}</td>
-                  <td className="px-3 py-2 text-muted-foreground" colSpan={5}>Not tracked</td>
-                </tr>
-              )
-              const diff = r.prior != null ? r.cur - r.prior : null
-              const cc = contractOn ? contracted(r.cur) : null
-              const fc = lagDiff != null
-                ? lagDiff > 0.15 ? <Badge variant="yellow">↑ Rise likely</Badge>
-                : lagDiff < -0.15 ? <Badge variant="teal">↓ Drop likely</Badge>
-                : <Badge variant="gray">Stable</Badge>
-                : <Badge variant="gray">—</Badge>
-              return (
-                <tr key={r.carrier + r.service} className="hover:bg-muted/20">
-                  <td className="px-3 py-2 font-semibold">{r.carrier}</td>
-                  <td className="px-3 py-2">{r.service}</td>
-                  <td className="px-3 py-2 font-bold">{r.cur.toFixed(2)}%</td>
-                  <td className="px-3 py-2">
-                    {cc != null
-                      ? <span className="font-semibold" style={{ color: '#00B4C5' }}>{cc.toFixed(2)}% <span className="text-[10px] text-muted-foreground">({contract.discountPct}% off)</span></span>
-                      : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-3 py-2">
-                    {diff == null ? <Badge variant="gray">—</Badge>
-                      : diff > 0.5 ? <Badge variant="red">▲ +{diff.toFixed(2)}%</Badge>
-                      : diff < -0.5 ? <Badge variant="green">▼ {diff.toFixed(2)}%</Badge>
-                      : <Badge variant="gray">≈ flat</Badge>}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{r.idx}</td>
-                  <td className="px-3 py-2">{fc}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      {/* Rate snapshot table */}
+      <div>
+        <div className="mb-3 text-xs font-medium text-muted-foreground">Rate Snapshot</div>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                {['Carrier', 'Service', 'This Week', 'Contracted', 'vs Prior Wk', 'Index', '5-Wk Outlook'].map(h => (
+                  <th key={h} className="px-3 py-2.5 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {[
+                { carrier: 'UPS', service: 'Ground', cur: lv('upsGround'), prior: pv('upsGround'), idx: 'EIA Diesel' },
+                { carrier: 'UPS', service: 'Air', cur: lv('upsAir'), prior: pv('upsAir'), idx: 'EIA Jet' },
+                { carrier: 'FedEx', service: 'Ground', cur: lv('fedexGround'), prior: pv('fedexGround'), idx: 'EIA Diesel' },
+                { carrier: 'FedEx', service: 'Express', cur: lv('fedexExpress'), prior: pv('fedexExpress'), idx: 'EIA Jet' },
+              ].map((r) => {
+                if (r.cur == null) return (
+                  <tr key={r.carrier + r.service} className="hover:bg-muted/20">
+                    <td className="px-3 py-2.5 font-medium"><CarrierLabel carrier={r.carrier} /></td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{r.service}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground" colSpan={5}>Not tracked</td>
+                  </tr>
+                )
+                const diff = r.prior != null ? r.cur - r.prior : null
+                const cc = contractOn ? contracted(r.cur) : null
+                const fc = lagDiff != null
+                  ? lagDiff > 0.15 ? <Badge variant="yellow">↑ Rise likely</Badge>
+                  : lagDiff < -0.15 ? <Badge variant="teal">↓ Drop likely</Badge>
+                  : <Badge variant="gray">Stable</Badge>
+                  : <Badge variant="gray">—</Badge>
+                return (
+                  <tr key={r.carrier + r.service} className="hover:bg-muted/20">
+                    <td className="px-3 py-2.5 font-medium"><CarrierLabel carrier={r.carrier} /></td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{r.service}</td>
+                    <td className="px-3 py-2.5 font-semibold text-foreground">{r.cur.toFixed(2)}%</td>
+                    <td className="px-3 py-2.5">
+                      {cc != null
+                        ? <span className="font-medium text-sky-600">{cc.toFixed(2)}%</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {diff == null
+                        ? <span className="text-[10px] text-muted-foreground">—</span>
+                        : Math.abs(diff) < 0.1
+                          ? <span className="text-[10px] text-muted-foreground">flat</span>
+                          : <span className={cn('font-medium', diff > 0 ? 'text-red-500' : 'text-emerald-600')}>
+                              {diff > 0 ? '▲ +' : '▼ '}{diff.toFixed(2)}pp
+                            </span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{r.idx}</td>
+                    <td className="px-3 py-2.5">{fc}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* EIA warning if no data */}
+      {/* EIA key warning */}
       {data.eiaError === 'rate_limited' && (
-        <div className="rounded-lg border border-amber-400/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3">
-          <p className="text-[12px] font-medium text-amber-700 dark:text-amber-400">EIA data requires a free API key</p>
-          <p className="text-[11px] text-amber-600/80 mt-0.5">Register at <span className="font-mono">eia.gov/opendata/register.php</span> then add <span className="font-mono">EIA_API_KEY=your_key</span> to <span className="font-mono">.env.local</span></p>
+        <div className="rounded-md border border-amber-300/50 bg-amber-50/60 px-4 py-3 dark:bg-amber-950/20">
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">EIA data requires a free API key</p>
+          <p className="mt-0.5 text-[11px] text-amber-600/80">
+            Register at <span className="font-mono">eia.gov/opendata/register.php</span> then add{' '}
+            <span className="font-mono">EIA_API_KEY=your_key</span> to <span className="font-mono">.env.local</span>
+          </p>
         </div>
       )}
+
+      {/* Market Brief — collapsible, at bottom, on demand */}
+      <div className="rounded-lg border border-border bg-muted/30">
+        <button
+          onClick={() => setBriefOpen(v => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <span className={cn('text-[9px] transition-transform', briefOpen && 'rotate-90')}>▶</span>
+            Market Brief
+          </span>
+          {briefOpen && (
+            <button
+              onClick={e => { e.stopPropagation(); void runBrief() }}
+              disabled={aiLoading}
+              className="text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+            >
+              {aiLoading ? 'Refreshing…' : '↻ Refresh'}
+            </button>
+          )}
+        </button>
+        {briefOpen && (
+          <div className="border-t border-border px-4 pb-4 pt-3">
+            {aiLoading && <p className="text-xs italic text-muted-foreground">Analyzing…</p>}
+            {aiError && (
+              <p className="text-xs text-destructive">
+                {aiError.includes('ANTHROPIC_API_KEY') ? 'Add ANTHROPIC_API_KEY to .env.local to enable market briefs.' : aiError}
+              </p>
+            )}
+            {aiBrief && !aiLoading && (
+              <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{aiBrief}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       <p className="text-right text-[10px] text-muted-foreground">
         EIA: eia.gov · Carrier rates: published FSC schedules · <strong>LogiFacts LLC</strong>
@@ -704,6 +817,8 @@ function InvoiceFuelAudit() {
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => { void load() }, [])
 
   async function load() {
     setLoading(true); setError(null)
@@ -963,17 +1078,13 @@ export function FuelSurchargeHub() {
               </div>
               {/* Source badges */}
               <div className="flex items-center justify-end gap-1.5 mt-2">
-                {/* UPS — gold shield */}
-                <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                <span className="flex items-center gap-1.5 bg-white/10 rounded-full px-2.5 py-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
-                  <span className="text-[9px] font-black" style={{ color: '#C9941A', letterSpacing: '0.04em' }}>UPS</span>
+                  <CarrierLogo carrier="ups" size="sm" className="brightness-110" />
                 </span>
-                {/* FedEx — purple "Fed" + orange "Ex" */}
-                <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                <span className="flex items-center gap-1.5 bg-white/10 rounded-full px-2.5 py-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#00B4C5] animate-pulse" />
-                  <span className="text-[9px] font-black leading-none">
-                    <span style={{ color: '#8B5CF6' }}>Fed</span><span style={{ color: '#FF6200' }}>Ex</span>
-                  </span>
+                  <CarrierLogo carrier="fedex" size="sm" />
                 </span>
                 {/* EIA — blue */}
                 <span className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">

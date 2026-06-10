@@ -49,14 +49,14 @@ create index if not exists invoice_rows_user_account_idx
 -- RLS: users may only access their own rows.
 alter table public.invoice_rows enable row level security;
 
-create policy "invoice_rows: users read own rows"
-  on public.invoice_rows for select
-  using (auth.uid() = user_id);
+create policy invoice_rows_select_own
+  on public.invoice_rows for select to authenticated
+  using ((select auth.uid()) = user_id);
 
-create policy "invoice_rows: users insert own rows"
-  on public.invoice_rows for insert
-  with check (auth.uid() = user_id);
+create policy invoice_rows_insert_own
+  on public.invoice_rows for insert to authenticated
+  with check ((select auth.uid()) = user_id);
 
-create policy "invoice_rows: users delete own rows"
-  on public.invoice_rows for delete
-  using (auth.uid() = user_id);
+create policy invoice_rows_delete_own
+  on public.invoice_rows for delete to authenticated
+  using ((select auth.uid()) = user_id);

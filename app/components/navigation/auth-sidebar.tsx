@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { label: 'Home', href: '/home' },
   { label: 'Premium Analysis', href: '/premium-analysis' },
   { label: 'Fuel Surcharges', href: '/fuel-surcharges' },
-  { label: 'Logifacts Shipment Calculator', href: '/pricing' },
+  { label: 'LogiFacts Shipment Calculator', href: '/pricing' },
   { label: 'Join Panel', href: '/join-panel' },
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },

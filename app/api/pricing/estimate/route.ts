@@ -1,12 +1,25 @@
 import { NextResponse } from 'next/server'
 
+import { resolveFedExFuelSurchargeRates } from '@/lib/cache/fedex-fuel-surcharge-cache'
 import { resolveFuelSurchargeRates } from '@/lib/cache/ups-fuel-surcharge-cache'
 import { createClient } from '@/lib/supabase/server'
+import { estimateFedEx } from '@/lib/pricing/fedex-estimate'
+import { loadFedExZoneChart, resolveFedExZoneChartPrefix } from '@/lib/pricing/fedex-zone-chart-loader'
+import type { FedExService, PricingCarrier } from '@/lib/pricing/fedex-types'
 import { estimateUPS } from '@/lib/pricing/ups-estimate'
 import { loadZoneChart, resolveZoneChartPrefix } from '@/lib/pricing/zone-chart-loader'
 import type { ContractDiscounts, UPSRateType, UPSService } from '@/lib/pricing/types'
 
-const VALID_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
+const VALID_CARRIERS: PricingCarrier[] = ['ups', 'fedex']
+const VALID_UPS_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
+const VALID_FEDEX_SERVICES: FedExService[] = [
+  'ground',
+  'home_delivery',
+  'express_saver',
+  '2day',
+  'standard_overnight',
+  'priority_overnight',
+]
 const VALID_RATE_TYPES: UPSRateType[] = ['daily', 'smallBusiness']
 
 export async function POST(req: Request) {
@@ -20,6 +33,7 @@ export async function POST(req: Request) {
   }
 
   const {
+    carrier: rawCarrier,
     weightLbs,
     dimensionsIn,
     originZip: bodyOriginZip,
@@ -33,15 +47,25 @@ export async function POST(req: Request) {
     contractDiscounts: rawDiscounts,
   } = body as Record<string, unknown>
 
+  const carrier: PricingCarrier = (typeof rawCarrier === 'string' && VALID_CARRIERS.includes(rawCarrier as PricingCarrier))
+    ? rawCarrier as PricingCarrier
+    : 'ups'
+
   if (typeof weightLbs !== 'number' || weightLbs <= 0) {
     return NextResponse.json({ error: 'Invalid weight.' }, { status: 422 })
   }
   if (typeof destinationZip !== 'string' || !/^\d{5}$/.test(destinationZip)) {
     return NextResponse.json({ error: 'Destination ZIP must be exactly 5 digits.' }, { status: 422 })
   }
-  if (typeof service !== 'string' || !VALID_SERVICES.includes(service as UPSService)) {
-    return NextResponse.json({ error: 'Invalid service.' }, { status: 422 })
+
+  if (carrier === 'ups') {
+    if (typeof service !== 'string' || !VALID_UPS_SERVICES.includes(service as UPSService)) {
+      return NextResponse.json({ error: 'Invalid UPS service.' }, { status: 422 })
+    }
+  } else if (typeof service !== 'string' || !VALID_FEDEX_SERVICES.includes(service as FedExService)) {
+    return NextResponse.json({ error: 'Invalid FedEx service.' }, { status: 422 })
   }
+
   const rateType: UPSRateType = (typeof rawRateType === 'string' && VALID_RATE_TYPES.includes(rawRateType as UPSRateType))
     ? rawRateType as UPSRateType
     : 'daily'
@@ -59,7 +83,6 @@ export async function POST(req: Request) {
     parsedDims = { length: d.length, width: d.width, height: d.height }
   }
 
-  // Origin ZIP: body overrides profile (allows per-query override)
   const profileOriginZip = String(user.user_metadata?.origin_zip ?? '')
   const originZip = (typeof bodyOriginZip === 'string' && /^\d{5}$/.test(bodyOriginZip))
     ? bodyOriginZip
@@ -68,8 +91,53 @@ export async function POST(req: Request) {
   if (!/^\d{5}$/.test(originZip)) {
     return NextResponse.json(
       { error: 'Origin ZIP not set. Please add your shipping origin ZIP in My Profile.' },
-      { status: 422 }
+      { status: 422 },
     )
+  }
+
+  const profileDiscounts = (user.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
+  const bodyDiscounts = (rawDiscounts !== null && typeof rawDiscounts === 'object')
+    ? rawDiscounts as ContractDiscounts
+    : {}
+  const contractDiscounts: ContractDiscounts = { ...profileDiscounts, ...bodyDiscounts }
+
+  if (carrier === 'fedex') {
+    const zoneChart = loadFedExZoneChart(originZip)
+    if (!zoneChart) {
+      const prefix = resolveFedExZoneChartPrefix(originZip)
+      return NextResponse.json(
+        {
+          error: prefix
+            ? `FedEx zone chart unavailable for origin prefix ${prefix}.`
+            : 'FedEx zone chart unavailable for this origin ZIP.',
+        },
+        { status: 422 },
+      )
+    }
+
+    const fuelResolved = await resolveFedExFuelSurchargeRates({ warmCache: false })
+    const fuelSurchargeRates = fuelResolved
+      ? { ground: fuelResolved.ground, express: fuelResolved.express }
+      : undefined
+
+    const result = estimateFedEx({
+      weightLbs,
+      dimensionsIn: parsedDims,
+      destinationZip,
+      service: service as FedExService,
+      residential: Boolean(residential),
+      nonStandardPackaging: Boolean(nonStandardPackaging),
+      declaredValueDollars: typeof declaredValueDollars === 'number' && declaredValueDollars > 0
+        ? declaredValueDollars
+        : 0,
+      addressCorrection: Boolean(addressCorrection),
+      zoneChart,
+      contractDiscounts,
+      fuelSurchargeRates,
+    })
+
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 422 })
+    return NextResponse.json({ breakdown: result.breakdown })
   }
 
   const zoneChart = loadZoneChart(originZip)
@@ -81,18 +149,10 @@ export async function POST(req: Request) {
           ? `Zone chart unavailable for origin prefix ${prefix}.`
           : 'Zone chart unavailable for this origin ZIP.',
       },
-      { status: 422 }
+      { status: 422 },
     )
   }
 
-  // Profile discounts are the default; body discounts override per-field
-  const profileDiscounts = (user.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
-  const bodyDiscounts = (rawDiscounts !== null && typeof rawDiscounts === 'object')
-    ? rawDiscounts as ContractDiscounts
-    : {}
-  const contractDiscounts: ContractDiscounts = { ...profileDiscounts, ...bodyDiscounts }
-
-  // Daily rates only — SB waives fuel. Use history/cache immediately; warm Redis in background.
   let fuelSurchargeRates: { ground: number; air: number } | undefined
   if (rateType !== 'smallBusiness') {
     const fuelResolved = await resolveFuelSurchargeRates({ warmCache: false })

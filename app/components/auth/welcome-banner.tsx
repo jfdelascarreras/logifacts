@@ -33,7 +33,7 @@ export async function WelcomeBanner({ className }: WelcomeBannerProps) {
 
   return (
     <p className={cn('font-heading text-lg font-bold tracking-wide', className)}>
-      Welcome {name} to Logifacts
+      Welcome {name} to LogiFacts
     </p>
   )
 }

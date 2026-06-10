@@ -1,0 +1,130 @@
+{
+  "_meta": {
+    "effectiveDate": "2026-01-05",
+    "source": "FedEx 2026 Service Guide + surcharge and fee changes (Jan 2026)",
+    "sourceFiles": [
+      "sources/fedex/Service_Guide_2026.pdf",
+      "sources/fedex/surcharge_and_fee_changes_2026.pdf"
+    ],
+    "notes": [
+      "List rates only. Apply contract discounts before use.",
+      "Fuel surcharge is weekly \u2014 see fedex-fuel-surcharge-history.json.",
+      "Home Delivery list rates match Ground; HD residential surcharge applied separately.",
+      "Zone-tiered AHS and oversize use base zone 2\u20138; territory zones (44/45/46) use zone 8 tier."
+    ]
+  },
+  "homeDeliveryResidentialSurcharge": 6.45,
+  "residentialSurcharge": {
+    "_note": "Applied to Express services when residential=true.",
+    "express": 6.95
+  },
+  "addressCorrection": 25.5,
+  "deliveryAreaSurcharge": {
+    "groundCommercial": 4.45,
+    "groundCommercialExtended": 5.55,
+    "groundResidential": 6.6,
+    "groundResidentialExtended": 8.8,
+    "expressCommercial": 4.45,
+    "expressCommercialExtended": 5.55,
+    "expressResidential": 6.6,
+    "expressResidentialExtended": 8.8,
+    "remoteCommercial": 16.75,
+    "remoteResidential": 16.75
+  },
+  "additionalHandling": {
+    "_note": "Highest trigger wins (weight > dimensions > packaging). Zone-tiered by base zone.",
+    "weight": [
+      {
+        "zoneMin": 2,
+        "zoneMax": 2,
+        "rate": 46.0
+      },
+      {
+        "zoneMin": 3,
+        "zoneMax": 4,
+        "rate": 50.25
+      },
+      {
+        "zoneMin": 5,
+        "zoneMax": 6,
+        "rate": 56.25
+      },
+      {
+        "zoneMin": 7,
+        "zoneMax": 99,
+        "rate": 58.75
+      }
+    ],
+    "dimensions": [
+      {
+        "zoneMin": 2,
+        "zoneMax": 2,
+        "rate": 29.5
+      },
+      {
+        "zoneMin": 3,
+        "zoneMax": 4,
+        "rate": 32.75
+      },
+      {
+        "zoneMin": 5,
+        "zoneMax": 6,
+        "rate": 38.5
+      },
+      {
+        "zoneMin": 7,
+        "zoneMax": 99,
+        "rate": 40.75
+      }
+    ],
+    "packaging": [
+      {
+        "zoneMin": 2,
+        "zoneMax": 2,
+        "rate": 26.5
+      },
+      {
+        "zoneMin": 3,
+        "zoneMax": 4,
+        "rate": 30.75
+      },
+      {
+        "zoneMin": 5,
+        "zoneMax": 6,
+        "rate": 33.0
+      },
+      {
+        "zoneMin": 7,
+        "zoneMax": 99,
+        "rate": 33.75
+      }
+    ]
+  },
+  "oversizeCharge": [
+    {
+      "zoneMin": 2,
+      "zoneMax": 2,
+      "rate": 255.0
+    },
+    {
+      "zoneMin": 3,
+      "zoneMax": 4,
+      "rate": 275.0
+    },
+    {
+      "zoneMin": 5,
+      "zoneMax": 6,
+      "rate": 320.0
+    },
+    {
+      "zoneMin": 7,
+      "zoneMax": 99,
+      "rate": 330.0
+    }
+  ],
+  "declaredValue": {
+    "minimumBandMax": 300.0,
+    "minimumCharge": 4.95,
+    "ratePerHundred": 1.65
+  }
+}

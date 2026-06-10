@@ -16,8 +16,8 @@ import {
   type InvoiceRecord,
 } from '@/lib/invoices/csv'
 import {
-  dedupeInvoiceRecordsStableOrder,
   dedupeInvoiceUploadRowsBySha256,
+  dedupeTaggedInvoiceRecordsStableOrder,
 } from '@/lib/invoices/identifier-safety'
 import {
   analyzeParseCacheFingerprint,
@@ -27,6 +27,7 @@ import {
   type PremiumParseIngestDiagnostics,
 } from '@/lib/invoices/analyze-parse-cache'
 import { contentSha256FromStoredCsv } from '@/lib/invoices/dedupe-hash-server'
+import type { UpsRowSyncInput } from '@/lib/invoices/invoice-rows'
 
 export type PremiumAnalysisComputeResult = {
   summaryCore: InvoiceAnalysisSummary
@@ -38,9 +39,10 @@ export type PremiumAnalysisComputeResult = {
   /** Filtered rows used for `summaryCore` (for Excel detail export). */
   records: InvoiceRecord[]
   mappingByDescription: ReturnType<typeof buildChargeDescriptionLookup>
-  /** Distinct uploads by content_sha256 (newest-first list with duplicates skipped). */
   /** Distinct uploads used after hashing identical files once (duplicate files skipped before parse). */
   uploadsCount: number
+  /** UPS rows tagged with source upload id — for invoice_rows sync on unfiltered analyze. */
+  upsSyncTagged: UpsRowSyncInput[]
 }
 
 // -- Helper: convert invoice_lines rows into InvoiceRecord shape ---------------
@@ -94,6 +96,50 @@ function invoiceLinesAsInvoiceRecords(
     r['Charge Category Code'] = line.charge_category_code ?? ''
     r['Package Quantity'] = String(line.package_quantity ?? 1)
     return r
+  })
+}
+
+function buildUpsSyncTaggedFromDedupedUploads(
+  deduped: ReadonlyArray<{ id: string; csv_text: string | null }>,
+  profileCompanyName: string
+): {
+  fullRecords: InvoiceRecord[]
+  upsSyncTagged: UpsRowSyncInput[]
+  rowsDroppedCriticalSciCorruption: number
+  duplicateChargeRowsDropped: number
+} {
+  let rowsDroppedCriticalSciCorruption = 0
+  const taggedBeforeDedupe: Array<{ record: InvoiceRecord; uploadId: string }> = []
+  for (const upload of deduped) {
+    const doc = parseInvoiceCsvDocument(String(upload.csv_text ?? ''))
+    rowsDroppedCriticalSciCorruption += doc.rowsDroppedCriticalSciCorruption
+    const afterFilter = filterRowsLikeClubColorsPowerQuery(doc.records)
+    for (const rec of afterFilter) {
+      taggedBeforeDedupe.push({ record: rec, uploadId: upload.id })
+    }
+  }
+  const { tagged, duplicatesDropped: duplicateChargeRowsDropped } =
+    dedupeTaggedInvoiceRecordsStableOrder(taggedBeforeDedupe)
+  const fullRecords = applyProfileSenderCompanyName(
+    tagged.map((t) => t.record),
+    profileCompanyName
+  )
+  const upsSyncTagged = tagged.map((t, i) => ({
+    record: fullRecords[i]!,
+    invoiceUploadId: t.uploadId,
+  }))
+  return {
+    fullRecords,
+    upsSyncTagged,
+    rowsDroppedCriticalSciCorruption,
+    duplicateChargeRowsDropped,
+  }
+}
+
+function normalizeUpsCarrierNames(records: InvoiceRecord[]): InvoiceRecord[] {
+  return records.map((r) => {
+    const cn = (r['Carrier Name'] ?? '').trim()
+    return cn ? r : { ...r, 'Carrier Name': 'UPS' }
   })
 }
 
@@ -197,6 +243,7 @@ export async function computePremiumInvoiceAnalysis(
   // -- UPS records from invoice_uploads (Club Colors pipeline) --------------
 
   let fullRecords: InvoiceRecord[] = []
+  let upsSyncTagged: UpsRowSyncInput[] = []
   let ingestDiagnostics: PremiumParseIngestDiagnostics = {
     duplicateUploadRowsSkipped: 0,
     duplicateChargeRowsDropped: 0,
@@ -235,28 +282,29 @@ export async function computePremiumInvoiceAnalysis(
 
     if (cached) {
       fullRecords = cached.fullRecords
+      upsSyncTagged = cached.upsSyncTagged
       ingestDiagnostics = cached.ingestDiagnostics
+      if (upsSyncTagged.length === 0 && deduped.length > 0) {
+        const rebuilt = buildUpsSyncTaggedFromDedupedUploads(deduped, profileCompanyName)
+        upsSyncTagged = rebuilt.upsSyncTagged
+      }
     } else {
-      let rowsDroppedCriticalSciCorruption = 0
-      const merged = deduped.flatMap((upload) => {
-        const doc = parseInvoiceCsvDocument(String(upload.csv_text ?? ''))
-        rowsDroppedCriticalSciCorruption += doc.rowsDroppedCriticalSciCorruption
-        return doc.records
-      })
-      const afterFilter = filterRowsLikeClubColorsPowerQuery(merged)
-      const { records: uniqCharges, duplicatesDropped: duplicateChargeRowsDropped } =
-        dedupeInvoiceRecordsStableOrder(afterFilter)
-      fullRecords = applyProfileSenderCompanyName(uniqCharges, profileCompanyName)
-      ingestDiagnostics = { duplicateUploadRowsSkipped, duplicateChargeRowsDropped, rowsDroppedCriticalSciCorruption }
-      setAnalyzeParseCache(parseCacheKey, profileCompanyName, fullRecords, ingestDiagnostics)
+      const built = buildUpsSyncTaggedFromDedupedUploads(deduped, profileCompanyName)
+      fullRecords = built.fullRecords
+      upsSyncTagged = built.upsSyncTagged
+      ingestDiagnostics = {
+        duplicateUploadRowsSkipped,
+        duplicateChargeRowsDropped: built.duplicateChargeRowsDropped,
+        rowsDroppedCriticalSciCorruption: built.rowsDroppedCriticalSciCorruption,
+      }
+      setAnalyzeParseCache(parseCacheKey, profileCompanyName, fullRecords, ingestDiagnostics, upsSyncTagged)
     }
 
-    // Normalise blank 'Carrier Name' values in UPS records so the by-carrier
-    // breakdown shows 'UPS' rather than an empty string.
-    fullRecords = fullRecords.map((r) => {
-      const cn = (r['Carrier Name'] ?? '').trim()
-      return cn ? r : { ...r, 'Carrier Name': 'UPS' }
-    })
+    fullRecords = normalizeUpsCarrierNames(fullRecords)
+    upsSyncTagged = upsSyncTagged.map((t) => ({
+      ...t,
+      record: normalizeUpsCarrierNames([t.record])[0]!,
+    }))
   }
 
   // -- FedEx / WWE records from invoice_lines --------------------------------
@@ -288,6 +336,7 @@ export async function computePremiumInvoiceAnalysis(
       records,
       mappingByDescription,
       uploadsCount: uploadsDeduped.length,
+      upsSyncTagged,
     },
   }
 }

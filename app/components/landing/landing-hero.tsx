@@ -44,7 +44,7 @@ export function LandingHero() {
         <section className="flex flex-col items-start gap-8">
             <div className="max-w-2xl">
               <h1 className="font-heading text-balance text-4xl font-bold tracking-tight sm:text-5xl">
-                Welcome to Logifacts
+                Welcome to LogiFacts
               </h1>
               <p className="mt-4 text-pretty text-lg leading-relaxed text-muted-foreground">
                 Get shipment cost visibility and actionable insights in one place. Connect

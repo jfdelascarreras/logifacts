@@ -178,6 +178,32 @@ export function dedupeInvoiceRecordsStableOrder(
   return { records: out, duplicatesDropped }
 }
 
+/** Like dedupeInvoiceRecordsStableOrder but preserves upload id for invoice_rows sync. */
+export function dedupeTaggedInvoiceRecordsStableOrder(
+  tagged: ReadonlyArray<{ record: InvoiceRecord; uploadId: string }>
+): {
+  tagged: Array<{ record: InvoiceRecord; uploadId: string }>
+  duplicatesDropped: number
+} {
+  const seen = new Set<string>()
+  const out: Array<{ record: InvoiceRecord; uploadId: string }> = []
+  let duplicatesDropped = 0
+  for (const item of tagged) {
+    const k = chargeLineDedupeKey(item.record)
+    if (!k.replace(/\u241e/g, '').trim()) {
+      out.push(item)
+      continue
+    }
+    if (seen.has(k)) {
+      duplicatesDropped++
+      continue
+    }
+    seen.add(k)
+    out.push(item)
+  }
+  return { tagged: out, duplicatesDropped }
+}
+
 export type DedupedInvoiceUploadRow = {
   id: string
   csv_text: string | null

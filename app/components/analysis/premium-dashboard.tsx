@@ -111,6 +111,56 @@ type AnalysisHistoryItem = {
   summary: Summary & Record<string, unknown>
 }
 
+// ─── Sparkline ───────────────────────────────────────────────────────────────
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  if (data.length < 2) return null
+  const W = 96, H = 40
+  const min = Math.min(...data), max = Math.max(...data)
+  const range = max - min || 1
+  const pts = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * W,
+    y: H - 4 - ((v - min) / range) * (H - 12),
+  }))
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const fill = `${line} L${pts.at(-1)!.x.toFixed(1)} ${H} L0 ${H}Z`
+  const last = pts.at(-1)!
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 self-center">
+      <path d={fill} fill={color} opacity={0.07} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+      <circle cx={last.x} cy={last.y} r={2.5} fill={color} opacity={0.9} />
+    </svg>
+  )
+}
+
+// ─── MetricCard ───────────────────────────────────────────────────────────────
+
+function MetricCard({
+  label, value, sub, sparkData, sparkColor,
+}: {
+  label: string
+  value: string
+  sub?: string
+  sparkData?: number[]
+  sparkColor?: string
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-5 py-4">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+          {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+        </div>
+        {sparkData && sparkData.length >= 2 && sparkColor && (
+          <Sparkline data={sparkData} color={sparkColor} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 const emptyFilterMeta: InvoiceAnalysisFilterMeta = {
   years: [],
   yearMonths: [],
@@ -834,94 +884,42 @@ export function PremiumDashboard() {
         {activeTab === 'analysis' && <>
 
         {summary && measures ? (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Total Cost</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.totalCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Total Packages</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.totalPackages.toLocaleString()}
-                </div>
-                {typeof measures.packageDedupeShipmentCount === 'number' ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Distinct shipments in package total:{' '}
-                    {measures.packageDedupeShipmentCount.toLocaleString()}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Fuel Cost</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.fuelCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Cost – Surcharges</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.costSurcharges.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Cost – Accessorials</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {(measures.costAccessorials ?? 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Weight Gap</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.weightGap.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              label="Total Cost"
+              value={measures.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.totalCost)}
+              sparkColor="#6366F1"
+            />
+            <MetricCard
+              label="Total Packages"
+              value={measures.totalPackages.toLocaleString()}
+              sub={typeof measures.packageDedupeShipmentCount === 'number'
+                ? `${measures.packageDedupeShipmentCount.toLocaleString()} distinct shipments`
+                : undefined}
+            />
+            <MetricCard
+              label="Fuel Cost"
+              value={measures.fuelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costFuel ?? 0)}
+              sparkColor="#F59E0B"
+            />
+            <MetricCard
+              label="Cost — Surcharges"
+              value={measures.costSurcharges.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costSurcharges ?? 0)}
+              sparkColor="#3B82F6"
+            />
+            <MetricCard
+              label="Cost — Accessorials"
+              value={(measures.costAccessorials ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costAccessorials ?? 0)}
+              sparkColor="#8B5CF6"
+            />
+            <MetricCard
+              label="Weight Gap"
+              value={measures.weightGap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            />
           </div>
         ) : null}
 

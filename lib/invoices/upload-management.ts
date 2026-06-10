@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { invalidateAnalysisCache } from '@/lib/cache/analysis-cache'
 import { redis } from '@/lib/cache/redis'
+import {
+  deleteInvoiceRowsForSourceInvoice,
+  deleteInvoiceRowsForUpload,
+} from '@/lib/invoices/invoice-rows'
 
 /** `csv` = `invoice_uploads` (UPS raw CSV). `invoice` = `invoices` (FedEx/WWE multipart ingest). */
 export type InvoiceUploadSource = 'csv' | 'invoice'
@@ -163,6 +167,8 @@ export async function deleteCsvUpload(
 
   if (uploadDeleteError) throw uploadDeleteError
 
+  await deleteInvoiceRowsForUpload(supabase, userId, uploadId)
+
   await invalidateAnalysisCache(userId)
 
   const remaining = await countUserInvoiceUploads(supabase, userId)
@@ -200,6 +206,8 @@ export async function deleteInvoiceRecord(
     .eq('invoice_id', invoiceId)
 
   if (linesError) throw linesError
+
+  await deleteInvoiceRowsForSourceInvoice(supabase, userId, invoiceId)
 
   const { error: deleteError } = await supabase
     .from('invoices')

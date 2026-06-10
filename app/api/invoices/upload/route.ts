@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { detectCarrierFromBuffer, parseInvoice } from '@/lib/invoices/parsers'
 import { mapInvoiceLines } from '@/lib/invoices/mapping'
+import {
+  invoiceRowsWriteEnabled,
+  syncMultipartInvoiceRows,
+} from '@/lib/invoices/invoice-rows'
 import { redis } from '@/lib/cache/redis'
 
 export const maxDuration = 120
@@ -131,6 +135,21 @@ export async function POST(request: Request) {
 
   // 7. Mark invoice as processed
   await supabase.from('invoices').update({ upload_status: 'processed' }).eq('id', invoiceId)
+
+  if (invoiceRowsWriteEnabled()) {
+    const rowSync = await syncMultipartInvoiceRows(
+      supabase,
+      user.id,
+      carrier,
+      invoiceId,
+      lines,
+      invoiceNumber,
+      invoiceDate
+    )
+    if (rowSync.error) {
+      console.warn('[invoices/upload] invoice_rows sync:', rowSync.error)
+    }
+  }
 
   // 8. Pre-warm Redis cache with base (no-filter) result
   if (redis) {
