@@ -12,6 +12,11 @@ scripts/_*
 # Personal / non-project files
 email-signature.html
 
+# Local-only — not deployed with the web app
+outputs/
+Invoices skills/examples/
+Fuel Charges tab/
+
 # UPS source documents — large binaries, not committed (see lib/pricing/data/sources/README.md)
 ups_zone_charts/
 small-business-rate-guide-us-en.pdf
