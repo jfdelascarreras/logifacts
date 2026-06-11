@@ -37,6 +37,7 @@ export async function POST(request: Request) {
 
   const buffer = await generatePremiumAnalysisExcel({
     summary: summaryCore,
+    periodMatrix: summaryForDashboard.periodMatrix ?? null,
     appliedFilters: summaryForDashboard.appliedFilters ?? null,
     uploadsAnalyzed: uploadsCount,
     records,

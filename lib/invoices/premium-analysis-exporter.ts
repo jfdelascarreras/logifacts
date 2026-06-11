@@ -15,6 +15,8 @@ import type { InvoiceAnalysisFilters, InvoiceAnalysisSummary } from '@/lib/invoi
 import { normalizeMappingText } from '@/lib/invoices/analysis-summary'
 import type { InvoiceRecord } from '@/lib/invoices/csv'
 import { toNumber } from '@/lib/invoices/csv'
+import type { SpendShipmentPeriodMatrix } from '@/lib/invoices/period-averages-matrix'
+import { appendPeriodMatrixSheets } from '@/lib/invoices/period-matrix-exporter'
 
 function addHeaderRow(ws: any, columns: string[]) {
   const row = ws.addRow(columns)
@@ -36,6 +38,7 @@ function numFmt(ws: any, colIndex: number, fmt = '#,##0') {
 
 export async function generatePremiumAnalysisExcel(options: {
   summary: InvoiceAnalysisSummary
+  periodMatrix?: SpendShipmentPeriodMatrix | null
   appliedFilters?: InvoiceAnalysisFilters | null
   uploadsAnalyzed: number
   records?: InvoiceRecord[]
@@ -53,7 +56,7 @@ export async function generatePremiumAnalysisExcel(options: {
 }): Promise<Buffer> {
   if (!ExcelJSMod) throw new Error('ExcelJS not installed. Run: pnpm add exceljs')
 
-  const { summary, appliedFilters, uploadsAnalyzed, records, mappingLookup } = options
+  const { summary, periodMatrix, appliedFilters, uploadsAnalyzed, records, mappingLookup } = options
   const workbook = new ExcelJSMod.Workbook()
   workbook.creator = 'Logifacts'
   workbook.created = new Date()
@@ -218,6 +221,10 @@ export async function generatePremiumAnalysisExcel(options: {
     }
     moneyFmt(detail, 5)
     numFmt(detail, 6, '#,##0')
+  }
+
+  if (periodMatrix?.years?.length) {
+    appendPeriodMatrixSheets(workbook, periodMatrix)
   }
 
   const arrayBuffer = await workbook.xlsx.writeBuffer()

@@ -18,6 +18,7 @@ import { CostForecastCard } from '@/app/components/analysis/cost-forecast-card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
+import { SpendShipmentPeriodMatrixCard } from '@/app/components/analysis/spend-shipment-period-matrix'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import {
   hasActiveInvoiceFilters,
@@ -28,6 +29,7 @@ import {
   type InvoiceAnalysisFilters,
 } from '@/lib/invoices/analysis-summary'
 import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
+import type { SpendShipmentPeriodMatrix } from '@/lib/invoices/period-averages-matrix'
 import { cn } from '@/lib/utils'
 
 type Measures = {
@@ -102,6 +104,7 @@ type Summary = {
     duplicateChargeRowsDropped: number
     rowsDroppedCriticalSciCorruption: number
   }
+  periodMatrix?: SpendShipmentPeriodMatrix
 }
 
 type AnalysisHistoryItem = {
@@ -323,6 +326,8 @@ export function PremiumDashboard() {
             .sort((a, b) => b.totalCost - a.totalCost)
         : undefined
 
+    const periodMatrix = (raw.periodMatrix ?? r.period_matrix) as SpendShipmentPeriodMatrix | undefined
+
     setSummary({
       totalRows: Number(raw.totalRows ?? r.total_rows ?? 0),
       measures: raw.measures,
@@ -349,6 +354,7 @@ export function PremiumDashboard() {
       filterMeta: mergedFilterMeta,
       appliedFilters: applied,
       ingestDiagnostics,
+      periodMatrix,
     })
   }, [])
 
@@ -1226,6 +1232,10 @@ export function PremiumDashboard() {
         ) : null}
 
         {summary?.dailySpend?.length ? <CostTrendGrid dailySpend={summary.dailySpend} /> : null}
+
+        {summary?.periodMatrix?.years?.length ? (
+          <SpendShipmentPeriodMatrixCard matrix={summary.periodMatrix} />
+        ) : null}
 
         {summary?.category2VolumeCpp?.length &&
         summary?.modeVolumeCpp?.length &&

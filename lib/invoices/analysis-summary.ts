@@ -8,6 +8,9 @@ import {
   toNumber,
   type InvoiceRecord,
 } from './csv'
+import type { SpendShipmentPeriodMatrix } from './period-averages-matrix'
+
+export type { SpendShipmentPeriodMatrix } from './period-averages-matrix'
 
 /** Shape of taxonomy rows loaded from `master_mapping` for Premium Analysis lookups. */
 export type ChargeDescriptionMappingRow = {
@@ -147,6 +150,8 @@ export type InvoiceAnalysisSummary = {
     duplicateChargeRowsDropped: number
     rowsDroppedCriticalSciCorruption: number
   }
+  /** Average spend & shipments by year, month, and ISO week-of-year. */
+  periodMatrix?: SpendShipmentPeriodMatrix
 }
 
 export type InvoiceAnalysisFilters = {
