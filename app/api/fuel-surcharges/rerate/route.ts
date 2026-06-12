@@ -1,37 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { loadFuelSurchargeHistory } from '@/lib/pricing/ups-fuel-surcharge-history'
-import type { FuelRateObservation } from '@/lib/pricing/ups-fuel-surcharge-history'
+import {
+  rerateFuelRow,
+  type FuelRerateInput,
+  type FuelRerateResult,
+} from '@/lib/pricing/fuel-rerate'
 import { createClient } from '@/lib/supabase/server'
 
-export type RerateInputRow = {
-  tracking_number: string
-  ship_date: string          // YYYY-MM-DD
-  service: string            // "Ground" | "Air" | "2Day" etc.
-  transport_charge: number   // base transportation charge (pre-surcharge)
-  billed_fuel_surcharge: number
-}
-
-export type RerateResultRow = RerateInputRow & {
-  rate_used: number | null
-  expected_fuel: number | null
-  variance: number | null      // billed − expected (positive = overbilled)
-  flag: 'overbilled' | 'underbilled' | 'correct' | 'no_rate'
-}
-
-function findRateForDate(
-  history: FuelRateObservation[],
-  date: string
-): { ground: number; air: number } | null {
-  // History is sorted newest-first; find the entry whose effectiveDate <= ship_date
-  const entry = history.find((h) => h.effectiveDate <= date)
-  if (!entry) return null
-  return { ground: entry.domesticGround, air: entry.domesticAir }
-}
-
-function isAirService(service: string): boolean {
-  return /air|2\s*day|3\s*day|next.?day|nda|express|priority/i.test(service)
-}
+export type RerateInputRow = FuelRerateInput
+export type RerateResultRow = FuelRerateResult
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -62,32 +40,15 @@ export async function POST(req: NextRequest) {
   let noRateCount = 0
 
   const results: RerateResultRow[] = (rows as RerateInputRow[]).map((row) => {
-    const rates = findRateForDate(history, row.ship_date)
-
-    if (!rates) {
-      noRateCount++
-      return { ...row, rate_used: null, expected_fuel: null, variance: null, flag: 'no_rate' }
+    const result = rerateFuelRow(row, history)
+    if (result.flag === 'no_rate') noRateCount++
+    if (result.flag === 'overbilled') flaggedOverbilled++
+    if (result.flag === 'underbilled') flaggedUnderbilled++
+    if (result.expected_fuel != null) {
+      totalBilled += row.billed_fuel_surcharge
+      totalExpected += result.expected_fuel
     }
-
-    const rate = isAirService(row.service) ? rates.air : rates.ground
-    const expectedFuel = +(row.transport_charge * rate).toFixed(2)
-    const variance = +(row.billed_fuel_surcharge - expectedFuel).toFixed(2)
-
-    let flag: RerateResultRow['flag']
-    if (variance > 1.0) {
-      flag = 'overbilled'
-      flaggedOverbilled++
-    } else if (variance < -1.0) {
-      flag = 'underbilled'
-      flaggedUnderbilled++
-    } else {
-      flag = 'correct'
-    }
-
-    totalBilled += row.billed_fuel_surcharge
-    totalExpected += expectedFuel
-
-    return { ...row, rate_used: rate, expected_fuel: expectedFuel, variance, flag }
+    return result
   })
 
   const totalVariance = +(totalBilled - totalExpected).toFixed(2)

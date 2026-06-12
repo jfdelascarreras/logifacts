@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { SpendShipmentPeriodMatrix } from '@/lib/invoices/period-averages-matrix'
-import { generatePeriodMatrixExcel } from '@/lib/invoices/period-matrix-exporter'
+import { generatePeriodMatrixExcel, type SpendShipmentPeriodMatrix } from '@/lib/premium-analysis'
 
 export const maxDuration = 60
 

@@ -65,7 +65,7 @@ export async function mapInvoiceLines(
       zone: line.zone ?? null,
       destination_state: line.destination_state ?? null,
       service_level: line.service_level ?? null,
-      reference_1: line.reference_1 ?? null,
+      reference_1: line.tracking_id ?? line.reference_1 ?? null,
       mapped: mapping !== undefined,
       charge_classification_code: line.charge_classification_code ?? null,
       charge_category_code: line.charge_category_code ?? null,

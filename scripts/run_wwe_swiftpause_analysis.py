@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from invoice_analysis.cli import main
+from premium_analysis_mirror.cli import main
 
 SWIFTPAUSE_DIR = (
     Path(__file__).resolve().parents[1]

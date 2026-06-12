@@ -56,14 +56,17 @@ function dispatchPremiumUpdate(summary: unknown) {
   window.dispatchEvent(new CustomEvent(PREMIUM_ANALYSIS_UPDATED, { detail: { summary } }))
 }
 
-async function triggerAnalysis(): Promise<void> {
-  try {
-    const res = await fetch('/api/invoices/analyze', { method: 'POST', cache: 'no-store' })
-    const json = (await res.json()) as { summary?: unknown }
-    if (res.ok && json.summary) dispatchPremiumUpdate(json.summary)
-  } catch {
-    // non-fatal — dashboard "Refresh analysis" button is the fallback
+async function triggerAnalysis(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/invoices/analyze', { method: 'POST', cache: 'no-store' })
+  const json = (await res.json()) as { summary?: unknown; error?: string; analysisCacheWarning?: string }
+  if (!res.ok) {
+    return { ok: false, error: json.error || 'Combined analysis failed after upload.' }
   }
+  if (json.summary) dispatchPremiumUpdate(json.summary)
+  if (json.analysisCacheWarning) {
+    console.warn('[upload] analysis cache:', json.analysisCacheWarning)
+  }
+  return { ok: true }
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -107,7 +110,12 @@ export function InvoiceUploadPanel() {
       if (!res.ok) throw new Error(json.error ?? 'Upload failed')
 
       updateItem(item.id, { state: 'analyzing' })
-      await triggerAnalysis()
+      const analyzed = await triggerAnalysis()
+      if (!analyzed.ok) {
+        throw new Error(
+          `${analyzed.error} File was saved — use Refresh analysis on the dashboard to load your full dataset.`
+        )
+      }
       updateItem(item.id, { state: 'done', result: json as UploadResult })
     } catch (err) {
       updateItem(item.id, {
@@ -217,13 +225,7 @@ export function InvoiceUploadPanel() {
       {queue.length > 0 && (
         <div className="space-y-2">
           {queue.map((item) => (
-            <FileRow
-              key={item.id}
-              item={item}
-              onRemove={removeStaged}
-              onView={(id) => router.push(`/dashboard/${id}`)}
-              disabled={running}
-            />
+            <FileRow key={item.id} item={item} onRemove={removeStaged} disabled={running} />
           ))}
 
           {/* Action bar */}
@@ -264,12 +266,10 @@ export function InvoiceUploadPanel() {
 function FileRow({
   item,
   onRemove,
-  onView,
   disabled,
 }: {
   item: QueuedFile
   onRemove: (id: string) => void
-  onView: (invoiceId: string) => void
   disabled: boolean
 }) {
   const { id, file, status } = item
@@ -310,34 +310,30 @@ function FileRow({
               <p className="text-xs text-destructive mt-0.5">{status.message}</p>
             )}
             {status.state === 'done' && (
-              <div className="mt-2 space-y-2">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                  <span>
-                    <span className="text-muted-foreground">Carrier </span>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {status.result.carrier}
-                    </Badge>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                <span>
+                  <span className="text-muted-foreground">Carrier </span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {status.result.carrier}
+                  </Badge>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Lines </span>
+                  <span className="font-semibold">{status.result.totalLines.toLocaleString()}</span>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Mapped </span>
+                  <span className="font-semibold text-green-600">
+                    {status.result.mappedLines.toLocaleString()}
                   </span>
-                  <span>
-                    <span className="text-muted-foreground">Lines </span>
-                    <span className="font-semibold">{status.result.totalLines.toLocaleString()}</span>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">Amount </span>
+                  <span className="font-semibold">
+                    ${status.result.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </span>
-                  <span>
-                    <span className="text-muted-foreground">Mapped </span>
-                    <span className="font-semibold text-green-600">
-                      {status.result.mappedLines.toLocaleString()}
-                    </span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Amount </span>
-                    <span className="font-semibold">
-                      ${status.result.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
-                  </span>
-                </div>
-                <Button size="sm" onClick={() => onView(status.result.invoiceId)}>
-                  View Analysis
-                </Button>
+                </span>
+                <span className="text-muted-foreground">Included in combined Premium Analysis ↑</span>
               </div>
             )}
           </div>

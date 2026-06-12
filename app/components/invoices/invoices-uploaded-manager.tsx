@@ -306,6 +306,7 @@ export function InvoicesUploadedManager() {
                   </TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Carrier</TableHead>
+                  <TableHead>Invoice Date</TableHead>
                   <TableHead>Uploaded</TableHead>
                   <TableHead className="text-right">Rows / Amount</TableHead>
                   <TableHead className="w-12 text-right">Remove</TableHead>
@@ -334,7 +335,10 @@ export function InvoicesUploadedManager() {
                       <TableCell>
                         <Badge variant="outline">{item.carrier}</Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-muted-foreground whitespace-nowrap">
+                        {item.invoice_date ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground whitespace-nowrap">
                         {new Date(item.created_at).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">

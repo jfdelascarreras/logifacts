@@ -43,19 +43,26 @@ const NON_UPS_DATE_COLUMNS: (keyof InvoiceRecord)[] = [
   'Shipment Date',
 ]
 
+/** FedEx/WWE spend rollups: prefer per-line shipment/transaction dates over invoice header date. */
+const FEDEX_WWE_ROLLUP_DATE_COLUMNS: (keyof InvoiceRecord)[] = [
+  'Shipment Date',
+  'Transaction Date',
+  'Invoice Date',
+]
+
 function passesNonUpsClubColorsDateGate(rec: InvoiceRecord): boolean {
   return NON_UPS_DATE_COLUMNS.some((col) => hasRealDateValue(col, rec))
 }
 
 /**
  * Raw date cell for Premium Analysis rollups and dashboard date filters.
- * FedEx/WWE: first non-empty among Invoice Date → Transaction Date → Shipment Date (excluding header echoes).
+ * FedEx/WWE: Shipment Date → Transaction Date → Invoice Date (per-line activity, not header-only).
  * UPS and other carriers: Invoice Date only (Club Colors).
  */
 export function primaryRollupDateRaw(rec: InvoiceRecord): string | null {
   const carrier = premiumCarrierKeyFromRecord(rec)
   if (carrier === 'FEDEX' || carrier === 'WWE') {
-    for (const col of NON_UPS_DATE_COLUMNS) {
+    for (const col of FEDEX_WWE_ROLLUP_DATE_COLUMNS) {
       if (hasRealDateValue(col, rec)) return String(rec[col] ?? '').trim()
     }
     return null

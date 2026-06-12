@@ -8,6 +8,8 @@ export interface ParsedInvoiceLine {
   destination_state?: string
   service_level?: string
   reference_1?: string
+  /** FedEx Express or Ground Tracking ID; WWE Airbill # when package-level. */
+  tracking_id?: string
   // Dashboard KPI fields (mirrors Python dashboard script)
   charge_classification_code?: string   // e.g. "FRT" | "ACC" — needed for Accessorials KPI
   charge_category_code?: string         // e.g. "INF" | "ICC" — excluded from Accessorials

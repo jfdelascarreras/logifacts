@@ -15,6 +15,7 @@ export type StoredInvoiceUploadItem = {
   source: InvoiceUploadSource
   filename: string
   carrier: string
+  invoice_date: string | null
   created_at: string
   row_count: number | null
   status: string
@@ -31,6 +32,33 @@ export type DeleteUploadItemResult = {
 
 function cleanFilename(name: string): string {
   return name.replace(/^(UTF-8|ISO-8859-\d+)'[a-z]*'?/i, '') || name
+}
+
+function resolveCsvUploadInvoiceDates(
+  rows: Array<{ invoice_upload_id: string | null; invoice_date: string | null }>
+): Map<string, string> {
+  const datesByUpload = new Map<string, Set<string>>()
+
+  for (const row of rows) {
+    const uploadId = row.invoice_upload_id
+    const date = row.invoice_date?.trim()
+    if (!uploadId || !date) continue
+    const bucket = datesByUpload.get(uploadId) ?? new Set<string>()
+    bucket.add(date)
+    datesByUpload.set(uploadId, bucket)
+  }
+
+  const resolved = new Map<string, string>()
+  for (const [uploadId, dates] of datesByUpload) {
+    if (dates.size === 1) {
+      resolved.set(uploadId, [...dates][0]!)
+      continue
+    }
+    const sorted = [...dates].sort()
+    resolved.set(uploadId, `${sorted[0]} – ${sorted[sorted.length - 1]}`)
+  }
+
+  return resolved
 }
 
 async function invalidateInvoiceRedisKeys(userId: string, invoiceId?: string): Promise<void> {
@@ -65,7 +93,7 @@ export async function listUserInvoiceUploads(
         .limit(200),
       supabase
         .from('invoices')
-        .select('id, filename, carrier, created_at, upload_status, total_amount')
+        .select('id, filename, carrier, invoice_date, created_at, upload_status, total_amount')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(200),
@@ -74,11 +102,27 @@ export async function listUserInvoiceUploads(
   if (csvError) throw csvError
   if (invoiceError) throw invoiceError
 
+  const csvIds = (csvUploads ?? []).map((row) => row.id)
+  let csvInvoiceDates = new Map<string, string>()
+
+  if (csvIds.length > 0) {
+    const { data: csvDateRows, error: csvDatesError } = await supabase
+      .from('invoice_rows')
+      .select('invoice_upload_id, invoice_date')
+      .eq('user_id', userId)
+      .in('invoice_upload_id', csvIds)
+      .not('invoice_date', 'is', null)
+
+    if (csvDatesError) throw csvDatesError
+    csvInvoiceDates = resolveCsvUploadInvoiceDates(csvDateRows ?? [])
+  }
+
   const csvItems: StoredInvoiceUploadItem[] = (csvUploads ?? []).map((row) => ({
     id: row.id,
     source: 'csv' as const,
     filename: cleanFilename(String(row.original_file_name ?? '')),
     carrier: 'UPS',
+    invoice_date: csvInvoiceDates.get(row.id) ?? null,
     created_at: row.created_at,
     row_count: row.row_count,
     status: String(row.status ?? 'uploaded'),
@@ -90,6 +134,7 @@ export async function listUserInvoiceUploads(
     source: 'invoice' as const,
     filename: cleanFilename(String(row.filename ?? '')),
     carrier: String(row.carrier ?? 'Unknown'),
+    invoice_date: row.invoice_date?.trim() || null,
     created_at: row.created_at,
     row_count: null,
     status: String(row.upload_status ?? 'processed'),

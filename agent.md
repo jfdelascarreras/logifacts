@@ -64,7 +64,8 @@ The core value is turning a 250-column carrier invoice — which no human wants 
 | `components/` | Shared UI primitives (shadcn-style under `components/ui/`). |
 | `hooks/` | Shared hooks (e.g. `use-mobile.ts`). |
 | `lib/` | Shared libraries: Supabase clients (`lib/supabase/`), cache (`lib/cache/`), invoice domain (`lib/invoices/`), pricing domain (`lib/pricing/`). |
-| `lib/invoices/` | Core invoice domain: CSV, dedupe hash, `analysis-summary.ts` engine, parsers, mapping, exporter. |
+| `lib/premium-analysis/` | Premium Analysis calculation: ingest adapters, `analysis-summary.ts` engine, period matrices, export, parse cache. Entry: `@/lib/premium-analysis`. |
+| `lib/invoices/` | Invoice ingest primitives: CSV, dedupe hash, parsers, mapping, `invoice_rows`, upload management. |
 | `lib/invoices/parsers/` | Carrier parsers: `ups.ts`, `fedex.ts`, `wwe.ts`, shared `scalars.ts`. |
 | `lib/pricing/` | Pricing domain: `ups-estimate.ts` (orchestration), `ups-rates.ts` (constants + rate lookup), `ups-zone-lookup.ts`, `types.ts`, `data/` (rate + zone JSON). |
 | `types/` | Shared TS types (`types/invoice.ts` — `Invoice`, `InvoiceLine`, filters, carriers). |
@@ -123,7 +124,8 @@ Full reference: **[`docs/DATABASE.md`](./docs/DATABASE.md)** — complete column
 
 ### Imports and aliases
 - Always use `@/` alias. Use `@/app-components/` for feature components in `app/components/`.
-- Invoice domain barrel: `@/lib/invoices` (re-exports from `analysis-summary.ts`, `csv.ts`, `dedupe-hash.ts`).
+- Premium Analysis barrel: `@/lib/premium-analysis` (ingest, aggregate, period matrix, export).
+- Invoice ingest barrel: `@/lib/invoices` (re-exports `csv.ts`, `dedupe-hash.ts`, `forecasting`).
 - UI primitives: `@/components/ui/...`
 
 ### Supabase clients
@@ -178,7 +180,7 @@ MASTER_MAPPING_XLSX=./path/to/mapping-workbook.xlsx  # optional, for seed
 
 ```bash
 pnpm install
-pnpm dev        # localhost:3000
+pnpm dev        # localhost:3001 (3000 reserved for other local apps)
 pnpm build
 pnpm start
 pnpm test       # vitest run
@@ -208,7 +210,7 @@ There is **one ingestion path.** The multipart path (`invoices` / `invoice_lines
 6. Persists `invoice_spend_by_date` (only when no active filters) and upserts `invoice_upload_analyses`. Invalidates Redis cache key `analysis:${userId}`.
 7. Client dispatches `PREMIUM_ANALYSIS_UPDATED` event.
 
-**Parse cache:** In-memory per user+fingerprint (`lib/invoices/analyze-parse-cache.ts`). Not Redis.
+**Parse cache:** In-memory per user+fingerprint (`lib/premium-analysis/analyze-parse-cache.ts`). Not Redis.
 
 ---
 
@@ -338,9 +340,9 @@ Profile discounts live in `user_metadata.contract_discounts` (My Profile). Marku
 
 - **Runner:** `pnpm test` → `vitest run`; `pnpm test:watch` → `vitest`
 - **Environment:** Node (not jsdom)
-- **Primary accuracy suite:** `lib/invoices/analysis-summary.test.ts` — deterministic assertions against `computeInvoiceAnalysisSummary`. Source of truth for correctness.
-- **Other tests:** `lib/invoices/analyze-parse-cache.test.ts`, `lib/invoices/fixtures/invoice-unpivot-fixtures.test.ts`
-- **Rule:** Any change to `lib/invoices/analysis-summary.ts` or its dependencies must keep all existing tests passing. Run `pnpm test` before marking any implementation done.
+- **Primary accuracy suite:** `lib/premium-analysis/analysis-summary.test.ts` — deterministic assertions against `computeInvoiceAnalysisSummary`. Source of truth for correctness.
+- **Other tests:** `lib/premium-analysis/analyze-parse-cache.test.ts`, `lib/premium-analysis/ingest-adapters/merge.test.ts`, `lib/invoices/fixtures/invoice-unpivot-fixtures.test.ts`
+- **Rule:** Any change to `lib/premium-analysis/analysis-summary.ts` or its dependencies must keep all existing tests passing. Run `pnpm test` before marking any implementation done.
 - **Pricing:** New logic in `lib/pricing/` must have its own test file before being wired to the API route.
 - **Dashboard forecasting / ML:** Must be tested as pure functions before UI connection.
 

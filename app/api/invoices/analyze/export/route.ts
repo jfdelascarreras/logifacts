@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
-import { generatePremiumAnalysisExcel } from '@/lib/invoices/premium-analysis-exporter'
+import { computePremiumInvoiceAnalysis, generatePremiumAnalysisExcel } from '@/lib/premium-analysis'
 
 export const maxDuration = 120
 

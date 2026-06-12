@@ -490,7 +490,7 @@ function LiveRatesTab({ data }: { data: HistoryPayload | null }) {
               <input
                 type="number" min={0} max={100} step={1} value={contract.discountPct}
                 onChange={e => saveContract({ ...contract, discountPct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
-                className="w-9 rounded border border-input bg-background px-1 py-0 text-center text-xs font-medium"
+                className="w-11 rounded border border-input bg-background px-1.5 py-0 text-center text-xs font-medium"
               />
               %
             </span>

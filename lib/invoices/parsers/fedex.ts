@@ -14,15 +14,24 @@ import type { ParsedInvoiceLine } from './types'
 import { excelCellRawNum, excelCellStr } from './excel-row'
 
 const TRACKING_CHARGE_DESC_HEADER_RE = /tracking\s*id\s*charge\s*description/i
+const EXPRESS_GROUND_TRACKING_ID_RE = /express\s*or\s*ground\s*tracking\s*id$/i
+
+function fedExHeaderColumn(ws: ExcelJS.Worksheet, pattern: RegExp, fallback: number, scanFrom = 0): number {
+  const headerRow = ws.getRow(1)
+  const scanEnd = Math.min(ws.columnCount ?? 220, 240)
+  for (let c = scanFrom; c < scanEnd; c++) {
+    if (pattern.test(excelCellStr(headerRow, c))) return c
+  }
+  return fallback
+}
 
 /** Header-driven anchor so Tendered Date / MPS Package ID columns before the first pair stay unparsed. */
 function fedExTrackingChargeDescStartColumn(ws: ExcelJS.Worksheet): number {
-  const headerRow = ws.getRow(1)
-  const scanEnd = Math.min(ws.columnCount ?? 220, 240)
-  for (let c = 70; c < scanEnd; c++) {
-    if (TRACKING_CHARGE_DESC_HEADER_RE.test(excelCellStr(headerRow, c))) return c
-  }
-  return 107
+  return fedExHeaderColumn(ws, TRACKING_CHARGE_DESC_HEADER_RE, 107, 70)
+}
+
+function fedExTrackingIdColumn(ws: ExcelJS.Worksheet): number {
+  return fedExHeaderColumn(ws, EXPRESS_GROUND_TRACKING_ID_RE, 9)
 }
 
 export type FedExParseOptions = {
@@ -38,6 +47,7 @@ export function parseFedExWorksheet(
 
   const unpivotOnly = Boolean(options?.unpivotChargesOnly)
   const trackingPairDescStart = fedExTrackingChargeDescStartColumn(ws)
+  const trackingIdCol = fedExTrackingIdColumn(ws)
   const results: ParsedInvoiceLine[] = []
 
   ws.eachRow((row: ExcelJS.Row, rowNumber: number) => {
@@ -61,16 +71,26 @@ export function parseFedExWorksheet(
 
     if (identifierLooksScientificNotationCorrupted(invoiceNumber)) return
 
+    const trackingId = excelCellStr(row, trackingIdCol) || undefined
+    if (trackingId && identifierLooksScientificNotationCorrupted(trackingId)) return
+
+    const shared = {
+      invoice_number: invoiceNumber || undefined,
+      invoice_date: invoiceDate || undefined,
+      shipment_date: shipmentDate || undefined,
+      zone: zoneCode || undefined,
+      destination_state: recipientState || undefined,
+      service_level: serviceType || undefined,
+      tracking_id: trackingId,
+      package_quantity: 1,
+    }
+
     if (!unpivotOnly && serviceType) {
       results.push({
         charge_description: serviceType,
         charge_amount: transportationChargeAmount || netChargeAmount,
-        invoice_number: invoiceNumber || undefined,
-        invoice_date: invoiceDate || undefined,
-        shipment_date: shipmentDate || undefined,
-        zone: zoneCode || undefined,
-        destination_state: recipientState || undefined,
-        service_level: serviceType || undefined,
+        charge_classification_code: 'FRT',
+        ...shared,
       })
     }
 
@@ -83,12 +103,7 @@ export function parseFedExWorksheet(
       results.push({
         charge_description: desc,
         charge_amount: amt,
-        invoice_number: invoiceNumber || undefined,
-        invoice_date: invoiceDate || undefined,
-        shipment_date: shipmentDate || undefined,
-        zone: zoneCode || undefined,
-        destination_state: recipientState || undefined,
-        service_level: serviceType || undefined,
+        ...shared,
       })
     }
   })

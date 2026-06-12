@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
-import { hasActiveInvoiceFilters } from '@/lib/invoices/analysis-summary'
-import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
-import { persistPremiumAnalysisCache } from '@/lib/invoices/persist-analysis-cache'
+import { computePremiumInvoiceAnalysis, hasActiveInvoiceFilters, persistPremiumAnalysisCache } from '@/lib/premium-analysis'
 import {
   invoiceRowsWriteEnabled,
   syncUpsInvoiceRows,
@@ -103,9 +101,13 @@ export async function POST(request: Request) {
     }
   }
 
+  let analysisCacheWarning: string | undefined
   const cacheResult = await persistPremiumAnalysisCache(supabase, user.id, summary)
   if (cacheResult.error) {
     return NextResponse.json({ error: cacheResult.error }, { status: 400 })
+  }
+  if (cacheResult.warning) {
+    analysisCacheWarning = cacheResult.warning
   }
 
   // Invalidate Redis so the next GET fetches fresh data from Supabase.
@@ -119,6 +121,7 @@ export async function POST(request: Request) {
       ...(spendSyncWarning ? { spendSyncWarning } : {}),
       ...(invoiceRowsSyncWarning ? { invoiceRowsSyncWarning } : {}),
       ...(invoiceRowsSynced != null ? { invoiceRowsSynced } : {}),
+      ...(analysisCacheWarning ? { analysisCacheWarning } : {}),
     },
     {
       headers: {

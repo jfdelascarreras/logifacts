@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
 import { ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react'
@@ -18,8 +18,10 @@ import { CostForecastCard } from '@/app/components/analysis/cost-forecast-card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
+import { AgentsFindingsPanel } from '@/app/components/analysis/agents-findings-panel'
 import { SpendShipmentPeriodMatrixCard } from '@/app/components/analysis/spend-shipment-period-matrix'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
+import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
 import {
   hasActiveInvoiceFilters,
   isInvoiceYearMonthKey,
@@ -27,9 +29,8 @@ import {
   normalizedMonthNumbers,
   type InvoiceAnalysisFilterMeta,
   type InvoiceAnalysisFilters,
-} from '@/lib/invoices/analysis-summary'
-import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
-import type { SpendShipmentPeriodMatrix } from '@/lib/invoices/period-averages-matrix'
+} from '@/lib/premium-analysis/analysis-summary'
+import type { SpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
 import { cn } from '@/lib/utils'
 
 type Measures = {
@@ -105,6 +106,12 @@ type Summary = {
     rowsDroppedCriticalSciCorruption: number
   }
   periodMatrix?: SpendShipmentPeriodMatrix
+  specCategories?: import('@/lib/premium-analysis/spec-categories').SpecCategoriesSummary
+  carrierMix?: import('@/lib/premium-analysis/agents-types').CarrierMixRow[]
+  anomalyFlags?: import('@/lib/premium-analysis/agents-types').AnomalyFlag[]
+  savingsEstimate?: import('@/lib/premium-analysis/agents-types').SavingsEstimate
+  actionItems?: import('@/lib/premium-analysis/agents-types').ActionItem[]
+  datasetFlags?: import('@/lib/premium-analysis/agents-types').DatasetFlags
 }
 
 type AnalysisHistoryItem = {
@@ -225,6 +232,9 @@ export function PremiumDashboard() {
   const [fromCache, setFromCache] = useState(false)
   const [invoicesExpanded, setInvoicesExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'analysis' | 'forecast'>('analysis')
+  /** Files in Invoices Uploaded — used to avoid "no analysis" when data exists. */
+  const [storedUploadCount, setStoredUploadCount] = useState(0)
+  const autoAnalyzeOnce = useRef(false)
 
   const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
     const res = await fetch('/api/invoices/analyze', { method: 'GET', cache: 'no-store' })
@@ -355,6 +365,12 @@ export function PremiumDashboard() {
       appliedFilters: applied,
       ingestDiagnostics,
       periodMatrix,
+      specCategories: (raw.specCategories ?? r.spec_categories) as Summary['specCategories'],
+      carrierMix: (raw.carrierMix ?? r.carrier_mix) as Summary['carrierMix'],
+      anomalyFlags: (raw.anomalyFlags ?? r.anomaly_flags) as Summary['anomalyFlags'],
+      savingsEstimate: (raw.savingsEstimate ?? r.savings_estimate) as Summary['savingsEstimate'],
+      actionItems: (raw.actionItems ?? r.action_items) as Summary['actionItems'],
+      datasetFlags: (raw.datasetFlags ?? r.dataset_flags) as Summary['datasetFlags'],
     })
   }, [])
 
@@ -362,7 +378,15 @@ export function PremiumDashboard() {
     setLoadingCached(true)
     setError(null)
     try {
-      const list = await loadHistory()
+      const [list, uploadsRes] = await Promise.all([
+        loadHistory(),
+        fetch('/api/invoices/uploads', { cache: 'no-store' }).then(
+          (r) => r.json() as Promise<{ uploads?: unknown[] }>
+        ),
+      ])
+      const uploadCount = uploadsRes.uploads?.length ?? 0
+      setStoredUploadCount(uploadCount)
+
       const latest = list[0]
       if (latest?.summary?.measures) {
         applySummaryPayload(latest.summary as Summary & Record<string, unknown>, {
@@ -490,6 +514,13 @@ export function PremiumDashboard() {
   useEffect(() => {
     void loadCachedSummary()
   }, [loadCachedSummary])
+
+  /** Uploaded files exist but no saved summary — run one combined analysis automatically. */
+  useEffect(() => {
+    if (loadingCached || summary || storedUploadCount === 0 || autoAnalyzeOnce.current) return
+    autoAnalyzeOnce.current = true
+    void postAnalysis(undefined, 'full-refresh')
+  }, [loadingCached, summary, storedUploadCount])
 
   /** After upload, the CSV card runs POST /analyze and dispatches this — update dashboard without a second click. */
   useEffect(() => {
@@ -870,20 +901,28 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
-        {!loadingCached && !summary && !error ? (
+        {!loadingCached && !summary && !error && !refreshing ? (
           <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-            <p>
-              No saved analysis yet.{' '}
-              <a
-                href="#premium-invoice-upload"
-                className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-              >
-                Upload invoice CSV files
-              </a>{' '}
-              above — we analyze automatically after each successful upload. If you already have uploads but no
-              analysis row, use{' '}
-              <span className="font-medium text-foreground">Refresh analysis</span> at the top to recompute manually.
-            </p>
+            {storedUploadCount > 0 ? (
+              <p>
+                You have {storedUploadCount} uploaded file{storedUploadCount !== 1 ? 's' : ''} in{' '}
+                <span className="font-medium text-foreground">Invoices Uploaded</span> below, but no saved combined
+                analysis yet. Use{' '}
+                <span className="font-medium text-foreground">Refresh analysis</span> to aggregate your full dataset.
+              </p>
+            ) : (
+              <p>
+                No invoice files yet.{' '}
+                <a
+                  href="#premium-invoice-upload"
+                  className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                >
+                  Upload invoices
+                </a>{' '}
+                above (UPS CSV or FedEx/WWE Excel) — we run one combined Premium Analysis across all carriers after
+                each successful upload.
+              </p>
+            )}
           </div>
         ) : null}
 
@@ -1236,6 +1275,8 @@ export function PremiumDashboard() {
         {summary?.periodMatrix?.years?.length ? (
           <SpendShipmentPeriodMatrixCard matrix={summary.periodMatrix} />
         ) : null}
+
+        <AgentsFindingsPanel summary={summary} />
 
         {summary?.category2VolumeCpp?.length &&
         summary?.modeVolumeCpp?.length &&

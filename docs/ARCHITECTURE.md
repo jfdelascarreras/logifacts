@@ -14,7 +14,8 @@ flowchart LR
 
   subgraph next [Next.js]
     API[POST /api/invoices/analyze]
-    Lib["lib/invoices/*\nparse · dedupe · aggregate"]
+    Lib["lib/premium-analysis/*\ningest · aggregate · export"]
+    Parse["lib/invoices/*\nCSV parse · parsers · mapping"]
   end
 
   subgraph supa [Supabase PostgreSQL]
@@ -28,12 +29,13 @@ flowchart LR
   Upload -->|Refresh analysis| API
   API --> Up
   API --> Map
+  Parse --> Lib
   Lib --> API
   API --> Spend
   API --> Ana
 ```
 
-**Principle:** raw invoices live in **`invoice_uploads`**; dashboard metrics are **derived** and stored in **`invoice_spend_by_date`** (daily rollup) and **`invoice_upload_analyses`** (full JSON summary cache). The **canonical business rules** for those derived values live in **`lib/invoices/analysis-summary.ts`** (pure TypeScript), not in SQL triggers.
+**Principle:** raw invoices live in **`invoice_uploads`** / **`invoices`**; dashboard metrics are **derived** and stored in **`invoice_spend_by_date`** (daily rollup) and **`invoice_upload_analyses`** (full JSON summary cache). The **canonical business rules** for those derived values live in **`lib/premium-analysis/`** (pure TypeScript), not in SQL triggers.
 
 ---
 
@@ -44,11 +46,12 @@ flowchart LR
 | `app/components/invoices/` | Upload UI (`invoice-csv-upload.tsx`) — client-side parse for row count, dedupe, Supabase insert. |
 | `app/api/invoices/analyze/` | `route.ts` — auth, load uploads + mappings, call aggregation engine, write spend + analysis cache. |
 | `app/api/invoices/upload/` | Multi-carrier ingest (CSV/Excel) — parses with `lib/invoices/parsers/` and maps lines via **`master_mapping`**. |
-| `lib/invoices/` | **Domain module**: CSV layout (`headers.ts`), parsing/filtering (`csv.ts`), content hash for dedupe (`dedupe-hash.ts`), **aggregation engine** (`analysis-summary.ts`), server hash helper (`dedupe-hash-server.ts`). Public entry: `lib/invoices/index.ts`. |
+| `lib/premium-analysis/` | **Premium Analysis calculation module**: ingest adapters, **`analysis-summary.ts`** aggregation engine, period matrices, Excel export, parse cache. Public entry: `@/lib/premium-analysis`. |
+| `lib/invoices/` | **Invoice ingest primitives**: CSV layout (`headers.ts`), parsing/filtering (`csv.ts`), content hash (`dedupe-hash.ts`), carrier parsers, mapping, `invoice_rows` sync. Public entry: `lib/invoices/index.ts`. |
 | `lib/invoices/parsers/` | Carrier parsers: **`ups.ts`** (CSV), **`fedex.ts`** / **`wwe.ts`** (Excel via ExcelJS) → `ParsedInvoiceLine[]`. |
 | `lib/invoices/mapping.ts` | Joins parsed lines to **`master_mapping`** per carrier (normalized charge description). |
 | `lib/invoices/excel-master-mapping.ts` | Reads consolidated mapping **`.xlsx`** (Charge Description … Standardized Charge); used by seed, not by Premium HTTP path. |
-| `lib/invoices/analysis-summary.test.ts` | **Accuracy proofs** (Vitest) — same engine as production API. |
+| `lib/premium-analysis/analysis-summary.test.ts` | **Accuracy proofs** (Vitest) — same engine as production API. |
 | `supabase/seed.ts` | Upserts **`master_mapping`** from the workbook (see below). |
 | `Invoices skills/` | **Offline** consolidated mapping workbook (`Master_Mapping_Consolidated_Updated*.xlsx`) + optional Python tooling — seeding source, not read on every analyze request. |
 
@@ -78,7 +81,7 @@ Row-level **Sender Company Name** in storage is still whatever the carrier expor
    - `filterRowsLikeClubColorsPowerQuery` — aligns with the Power Query–style filter (drop invalid/system rows).
    - `applyProfileSenderCompanyName` — if `user.user_metadata.company_name` is set, every row’s `Sender Company Name` is replaced for reporting consistency.
 5. **Load mappings** from **`master_mapping`** (including **`carrier`** and **`standardized_charge`**) and build **`buildChargeDescriptionLookup`**: composite keys are **`UPS` / `FEDEX` / `WWE` + tab + normalized charge description**, plus legacy **description-only** keys for **UPS** rows for backward compatibility.
-6. **Aggregate** with `computeInvoiceAnalysisSummary` in `analysis-summary.ts` — **single source of truth** for totals, fuel/accessorial splits, carrier/service, daily/monthly spend, category/mode/weight buckets, package dedupe by shipment key, weight gap, etc. Row-level taxonomy resolution uses **`Carrier Name`** from the CSV plus **`Charge Description`** (see [`PREMIUM_ANALYSIS_CALCULATION.md`](./PREMIUM_ANALYSIS_CALCULATION.md)).
+6. **Aggregate** with `computeInvoiceAnalysisSummary` in `lib/premium-analysis/analysis-summary.ts` — **single source of truth** for totals, fuel/accessorial splits, carrier/service, daily/monthly spend, category/mode/weight buckets, package dedupe by shipment key, weight gap, etc. Row-level taxonomy resolution uses **`Carrier Name`** from the CSV plus **`Charge Description`** (see [`PREMIUM_ANALYSIS_CALCULATION.md`](./PREMIUM_ANALYSIS_CALCULATION.md)).
 7. **Persist results**
    - Replace user rows in `invoice_spend_by_date` from the computed daily series.
    - Upsert `invoice_upload_analyses` (summary JSON, keyed by latest `invoice_upload_id` while values aggregate across uploads in that run).
@@ -96,7 +99,7 @@ Premium Analysis UI loads cached analysis and/or recomputes display from stored 
 | Mechanism | Details |
 |-----------|---------|
 | **Pure engine** | `computeInvoiceAnalysisSummary` has **no** database or network calls. |
-| **Co-located tests** | `lib/invoices/analysis-summary.test.ts` runs with **Vitest** (`pnpm test`). |
+| **Co-located tests** | `lib/premium-analysis/analysis-summary.test.ts` runs with **Vitest** (`pnpm test`). |
 | **Golden-style cases** | Synthetic rows with hand-checked expectations for `totalCost`, `fuelCost`, `costAccessorials`, package dedupe, etc. |
 | **Pipeline smoke** | Full 250-column CSV line → parse → filter → profile sender. |
 

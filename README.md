@@ -12,7 +12,7 @@ Run the development server with:
 pnpm dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000).
+Then open [http://localhost:3001](http://localhost:3001).
 
 ## Design System
 

@@ -115,7 +115,7 @@ export function parsedLineToRow(
     account_number: null,
     invoice_date: textOrNull(line.invoice_date ?? invoiceDate),
     invoice_number: textOrNull(line.invoice_number ?? invoiceNumber),
-    tracking_number: null,
+    tracking_number: textOrNull(line.tracking_id),
     charge_category_code: textOrNull(line.charge_category_code),
     charge_category_detail_code: null,
     charge_classification_code: textOrNull(line.charge_classification_code),
@@ -131,7 +131,7 @@ export function parsedLineToRow(
     carrier_name: carrier,
     original_service_description: textOrNull(line.service_level),
     lead_shipment_number: null,
-    shipment_reference_number_1: textOrNull(line.reference_1),
+    shipment_reference_number_1: textOrNull(line.tracking_id ?? line.reference_1),
   }
 }
 
