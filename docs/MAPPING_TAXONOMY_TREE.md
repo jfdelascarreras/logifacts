@@ -264,6 +264,19 @@ Sorted by volume of mapping rows (not invoice spend):
 
 ---
 
+## MoM waterfall buckets (dashboard hover)
+
+The **What Drove the MoM Change?** chart uses a **mutually exclusive** four-step partition (fuel is not double-counted with surcharges). Hover text is sourced from `lib/premium-analysis/waterfall-bucket-taxonomy.ts` (kept in sync with this doc).
+
+| Waterfall bar | Formula | Mapping signals |
+|---------------|---------|-----------------|
+| **Base Freight** | `totalCost − costSurcharges − costAccessorials` | Category 1 `Base Freight` · Category 2 `Base Freight`, `International`, `LTL / Hundredweight` · Category 3 `Base Freight` / `LTL Freight` |
+| **Fuel** | `costFuel` | Category 1 `Fuel Surcharge` · Category 2 `Fuel Surcharge` · Category 3 `Fuel Surcharge` |
+| **Other surcharges** | `max(0, costSurcharges − costFuel)` | Category 2 `Peak/Demand` · Category 3 `Surcharge` (not fuel) |
+| **Accessorials** | `costAccessorials` | Category 1 `Accessorial Surcharge` · Category 2 `Area Surcharge`, `Residential Surcharge`, `Handling`, … · Category 3 `Accessorials` or UPS `ACC` |
+
+---
+
 ## Common questions
 
 ### Is Fuel Surcharge “part of Surcharges”?
