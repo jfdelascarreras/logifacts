@@ -76,6 +76,7 @@ def empty_standard_row() -> dict[str, object]:
             "Receiver State",
             "Sender Company Name",
             "Shipment Date",
+            "Transaction Date",
         ]
     }
 

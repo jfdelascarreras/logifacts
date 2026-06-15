@@ -51,6 +51,7 @@ export async function deleteUserData(admin: SupabaseClient, userId: string): Pro
     'invoice_upload_analyses',
     'invoice_spend_by_date',
     'invoice_rows',
+    'raw_invoice_files',
     'invoice_uploads',
   ] as const
 

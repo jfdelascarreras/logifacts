@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from .constants import UPS_HEADERS
+from .constants import UPS_HEADERS, UPS_PARSE_VERSION
 from .parsers import (
     detect_carrier,
     excel_to_ups_shape,
@@ -117,16 +117,22 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+META_RECORD_COLUMNS = frozenset({"Source File", "_parse_version"})
+
+
 def _dataframe_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for _, row in df.iterrows():
         rec = {h: None for h in UPS_HEADERS}
         for col in row.index:
+            val = row[col]
             if col in rec:
-                val = row[col]
                 if val is None or (isinstance(val, float) and pd.isna(val)):
                     rec[col] = None
                 else:
+                    rec[col] = str(val).strip()
+            elif col in META_RECORD_COLUMNS:
+                if val is not None and not (isinstance(val, float) and pd.isna(val)):
                     rec[col] = str(val).strip()
         records.append(rec)
     return records
@@ -207,6 +213,13 @@ def ingest_folder(folder: Path, *, recursive: bool = True) -> IngestResult:
     rows_dropped_date_gate = before_date - len(filtered)
 
     filtered, rows_dropped_charge_dedupe = dedupe_records_stable(filtered)
+
+    for rec in filtered:
+        if rec.get("_parse_version"):
+            continue
+        carrier = str(rec.get("Carrier Name") or "").strip().upper()
+        if carrier in {"", "UPS"}:
+            rec["_parse_version"] = UPS_PARSE_VERSION
 
     return IngestResult(
         records=filtered,

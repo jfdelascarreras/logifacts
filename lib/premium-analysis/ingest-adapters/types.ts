@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
+import { emptyIngestDiagnostics } from '@/lib/premium-analysis/ingest-diagnostics'
 import type { InvoiceRecord } from '@/lib/invoices/csv'
 import type { UpsRowSyncInput } from '@/lib/invoices/invoice-rows'
 import type { Carrier } from '@/types/invoice'
@@ -28,8 +29,4 @@ export type CarrierIngestAdapter = {
   load(ctx: CarrierIngestContext): Promise<CarrierIngestResult | null>
 }
 
-export const ZERO_INGEST_DIAGNOSTICS: PremiumParseIngestDiagnostics = {
-  duplicateUploadRowsSkipped: 0,
-  duplicateChargeRowsDropped: 0,
-  rowsDroppedCriticalSciCorruption: 0,
-}
+export const ZERO_INGEST_DIAGNOSTICS: PremiumParseIngestDiagnostics = emptyIngestDiagnostics()

@@ -11,6 +11,9 @@ import {
   invalidateAnalysisCache,
   setAnalysisCache,
 } from '@/lib/cache/analysis-cache'
+import { buildAnalysisRunRow, fetchLatestAnalysisRuns, recordAnalysisRun } from '@/lib/premium-analysis/analysis-runs'
+import { compareAnalysisRunRegression } from '@/lib/premium-analysis/analysis-regression'
+import { detectStaleIngest } from '@/lib/premium-analysis/stale-ingest'
 
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
 export const maxDuration = 120
@@ -38,7 +41,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
+  const startedAt = Date.now()
+
   const computed = await computePremiumInvoiceAnalysis(supabase, user, filtersRaw)
+  const durationMs = Date.now() - startedAt
   if (!computed.ok) {
     return NextResponse.json({ error: computed.message }, { status: computed.status })
   }
@@ -46,6 +52,28 @@ export async function POST(request: Request) {
   const { summaryCore, summaryForDashboard: summary, uploadsCount, upsSyncTagged } = computed.data
   const appliedFilters = summary.appliedFilters
   const filtersActive = hasActiveInvoiceFilters(appliedFilters)
+
+  let summaryForPersist = summary
+  if (!filtersActive) {
+    const carriers = Object.keys(summary.byCarrier ?? {})
+    const staleIngest = detectStaleIngest(summary.ingestDiagnostics?.parseVersions ?? [], carriers)
+    const priorRuns = await fetchLatestAnalysisRuns(supabase, user.id, 1)
+    const runRegression = priorRuns[0]
+      ? compareAnalysisRunRegression(
+          {
+            totalCost: summary.measures.totalCost,
+            shipmentCount: summary.measures.packageDedupeShipmentCount,
+            lineCount: summary.totalRows,
+          },
+          priorRuns[0]
+        )
+      : null
+    summaryForPersist = {
+      ...summary,
+      staleIngest,
+      ...(runRegression ? { runRegression } : {}),
+    }
+  }
 
   const spendRows: Array<{
     user_id: string
@@ -102,7 +130,7 @@ export async function POST(request: Request) {
   }
 
   let analysisCacheWarning: string | undefined
-  const cacheResult = await persistPremiumAnalysisCache(supabase, user.id, summary)
+  const cacheResult = await persistPremiumAnalysisCache(supabase, user.id, summaryForPersist)
   if (cacheResult.error) {
     return NextResponse.json({ error: cacheResult.error }, { status: 400 })
   }
@@ -113,11 +141,13 @@ export async function POST(request: Request) {
   // Invalidate Redis so the next GET fetches fresh data from Supabase.
   await invalidateAnalysisCache(user.id)
 
+  await recordAnalysisRun(supabase, buildAnalysisRunRow(user.id, summaryForPersist, durationMs))
+
   return NextResponse.json(
     {
       uploadId: cacheResult.uploadId,
       uploadsAnalyzed: uploadsCount,
-      summary,
+      summary: summaryForPersist,
       ...(spendSyncWarning ? { spendSyncWarning } : {}),
       ...(invoiceRowsSyncWarning ? { invoiceRowsSyncWarning } : {}),
       ...(invoiceRowsSynced != null ? { invoiceRowsSynced } : {}),

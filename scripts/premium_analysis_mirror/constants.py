@@ -4,6 +4,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+FEDEX_PARSE_VERSION = "fedex-v2"
+WWE_PARSE_VERSION = "wwe-v1"
+UPS_PARSE_VERSION = "ups-csv-v1"
+
+FEDEX_RATES_JSON = REPO_ROOT / "lib" / "pricing" / "data" / "fedex-rates.json"
+UPS_FUEL_HISTORY_JSON = REPO_ROOT / "lib" / "pricing" / "data" / "ups-fuel-surcharge-history.json"
+
 DEFAULT_MAPPING_FILE = REPO_ROOT / "Invoices skills" / "Master_Mapping_Consolidated_Updated.xlsx"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "outputs" / "invoice_analysis"
 

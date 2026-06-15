@@ -19,7 +19,10 @@ import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
 import { AgentsFindingsPanel } from '@/app/components/analysis/agents-findings-panel'
+import { DataHealthCard } from '@/app/components/analysis/data-health-card'
+import { IngestAlertsCard } from '@/app/components/analysis/ingest-alerts-card'
 import { SpendShipmentPeriodMatrixCard } from '@/app/components/analysis/spend-shipment-period-matrix'
+import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
 import {
@@ -100,11 +103,7 @@ type Summary = {
   spendByCarrier?: Array<{ carrier: string; totalCost: number }>
   filterMeta?: InvoiceAnalysisFilterMeta
   appliedFilters?: InvoiceAnalysisFilters
-  ingestDiagnostics?: {
-    duplicateUploadRowsSkipped: number
-    duplicateChargeRowsDropped: number
-    rowsDroppedCriticalSciCorruption: number
-  }
+  ingestDiagnostics?: PremiumParseIngestDiagnostics
   periodMatrix?: SpendShipmentPeriodMatrix
   specCategories?: import('@/lib/premium-analysis/spec-categories').SpecCategoriesSummary
   carrierMix?: import('@/lib/premium-analysis/agents-types').CarrierMixRow[]
@@ -112,6 +111,10 @@ type Summary = {
   savingsEstimate?: import('@/lib/premium-analysis/agents-types').SavingsEstimate
   actionItems?: import('@/lib/premium-analysis/agents-types').ActionItem[]
   datasetFlags?: import('@/lib/premium-analysis/agents-types').DatasetFlags
+  ingestQuality?: import('@/lib/premium-analysis/ingest-quality').IngestQualityGate
+  ingestSource?: 'invoice_rows' | 'legacy'
+  staleIngest?: import('@/lib/premium-analysis/stale-ingest').StaleIngestAlert
+  runRegression?: import('@/lib/premium-analysis/analysis-regression').RunRegression
 }
 
 type AnalysisHistoryItem = {
@@ -228,6 +231,7 @@ export function PremiumDashboard() {
   const [loadingCached, setLoadingCached] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null)
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
   const [invoicesExpanded, setInvoicesExpanded] = useState(false)
@@ -290,18 +294,58 @@ export function PremiumDashboard() {
     let ingestDiagnostics: Summary['ingestDiagnostics'] = undefined
     if (ingestRaw && typeof ingestRaw === 'object') {
       const ig = ingestRaw as Record<string, unknown>
-      const dupUp = ig.duplicateUploadRowsSkipped ?? ig.duplicate_upload_rows_skipped
-      const dupCh = ig.duplicateChargeRowsDropped ?? ig.duplicate_charge_rows_dropped
-      const sci = ig.rowsDroppedCriticalSciCorruption ?? ig.rows_dropped_critical_sci_corruption
+      const num = (k: string, snake: string) => {
+        const v = ig[k] ?? ig[snake]
+        return typeof v === 'number' ? v : undefined
+      }
+      const dupUp = num('duplicateUploadRowsSkipped', 'duplicate_upload_rows_skipped')
+      const dupCh = num('duplicateChargeRowsDropped', 'duplicate_charge_rows_dropped')
+      const sci = num('rowsDroppedCriticalSciCorruption', 'rows_dropped_critical_sci_corruption')
+      const linesTotal = num('linesTotal', 'lines_total')
+      const linesMapped = num('linesMapped', 'lines_mapped')
+      const unmappedSpend = num('unmappedSpend', 'unmapped_spend')
+      const shipmentsTotal = num('shipmentsTotal', 'shipments_total')
+      const shipmentsWithoutTracking = num('shipmentsWithoutTracking', 'shipments_without_tracking')
+      const linesMissingShipDate = num('linesMissingShipDate', 'lines_missing_ship_date')
+      const parseVersionsRaw = ig.parseVersions ?? ig.parse_versions
+      const parseVersions = Array.isArray(parseVersionsRaw)
+        ? parseVersionsRaw.filter((v): v is string => typeof v === 'string')
+        : []
       if (
-        typeof dupUp === 'number' &&
-        typeof dupCh === 'number' &&
-        typeof sci === 'number'
+        dupUp != null &&
+        dupCh != null &&
+        sci != null &&
+        linesTotal != null &&
+        linesMapped != null &&
+        unmappedSpend != null &&
+        shipmentsTotal != null &&
+        shipmentsWithoutTracking != null &&
+        linesMissingShipDate != null
       ) {
         ingestDiagnostics = {
           duplicateUploadRowsSkipped: dupUp,
           duplicateChargeRowsDropped: dupCh,
           rowsDroppedCriticalSciCorruption: sci,
+          linesTotal,
+          linesMapped,
+          unmappedSpend,
+          shipmentsTotal,
+          shipmentsWithoutTracking,
+          linesMissingShipDate,
+          parseVersions,
+        }
+      } else if (dupUp != null && dupCh != null && sci != null) {
+        ingestDiagnostics = {
+          duplicateUploadRowsSkipped: dupUp,
+          duplicateChargeRowsDropped: dupCh,
+          rowsDroppedCriticalSciCorruption: sci,
+          linesTotal: 0,
+          linesMapped: 0,
+          unmappedSpend: 0,
+          shipmentsTotal: 0,
+          shipmentsWithoutTracking: 0,
+          linesMissingShipDate: 0,
+          parseVersions: [],
         }
       }
     }
@@ -371,12 +415,17 @@ export function PremiumDashboard() {
       savingsEstimate: (raw.savingsEstimate ?? r.savings_estimate) as Summary['savingsEstimate'],
       actionItems: (raw.actionItems ?? r.action_items) as Summary['actionItems'],
       datasetFlags: (raw.datasetFlags ?? r.dataset_flags) as Summary['datasetFlags'],
+      ingestQuality: (raw.ingestQuality ?? r.ingest_quality) as Summary['ingestQuality'],
+      ingestSource: (raw.ingestSource ?? r.ingest_source) as Summary['ingestSource'],
+      staleIngest: (raw.staleIngest ?? r.stale_ingest) as Summary['staleIngest'],
+      runRegression: (raw.runRegression ?? r.run_regression) as Summary['runRegression'],
     })
   }, [])
 
   const loadCachedSummary = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
+    setRefreshWarning(null)
     try {
       const [list, uploadsRes] = await Promise.all([
         loadHistory(),
@@ -411,6 +460,7 @@ export function PremiumDashboard() {
     setRefreshing(true)
     setAnalysisPostIntent(intent)
     setError(null)
+    setRefreshWarning(null)
     try {
       const res = await fetch('/api/invoices/analyze', {
         method: 'POST',
@@ -427,10 +477,18 @@ export function PremiumDashboard() {
           hydrateFiltersFromApplied: hasActiveInvoiceFilters(filters),
         })
         setFromCache(false)
+        setRefreshWarning(null)
       }
       await loadHistory()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to refresh analysis.')
+      const msg = e instanceof Error ? e.message : 'Failed to refresh analysis.'
+      if (summary?.measures) {
+        setRefreshWarning(msg)
+        setError(null)
+      } else {
+        setError(msg)
+        setRefreshWarning(null)
+      }
     } finally {
       setRefreshing(false)
       setAnalysisPostIntent('idle')
@@ -625,7 +683,7 @@ export function PremiumDashboard() {
             </p>
             {fromCache && summary ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                Showing your last saved analysis from the server. New uploads trigger analysis automatically; use{' '}
+                Showing your last saved analysis from the server. Multi-file uploads run one combined analysis at the end; use{' '}
                 <span className="font-medium text-foreground">Refresh analysis</span> for a manual full recompute when
                 you need it.
               </p>
@@ -670,25 +728,40 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
-        {summary?.ingestDiagnostics && summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0 ? (
-          <Card className="border-amber-500/40 bg-amber-500/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base text-foreground">Rows excluded</CardTitle>
-              <CardDescription className="text-foreground/80">
-                Some charge lines were not included because key fields matched a scientific-notation corruption
-                pattern. Compare totals to your source file; if spreadsheets edited the CSV, format identifier columns as
-                text before export.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-foreground">
-              <p>
-                Rows excluded:{' '}
-                <span className="font-medium tabular-nums">
-                  {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption}
-                </span>
-              </p>
-            </CardContent>
-          </Card>
+        {refreshWarning ? (
+          <div
+            role="status"
+            className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+          >
+            <p>
+              <span className="font-medium">Refresh did not complete.</span> Showing your last saved analysis.{' '}
+              {refreshWarning}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0 h-7 px-2 text-amber-950 hover:bg-amber-500/20 dark:text-amber-100"
+              onClick={() => setRefreshWarning(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        ) : null}
+
+        {summary?.ingestDiagnostics ? (
+          <DataHealthCard
+            diagnostics={summary.ingestDiagnostics}
+            totalCost={measures?.totalCost}
+          />
+        ) : null}
+
+        {summary ? (
+          <IngestAlertsCard
+            ingestSource={summary.ingestSource}
+            staleIngest={summary.staleIngest}
+            runRegression={summary.runRegression}
+          />
         ) : null}
 
         {summary && measures ? (
@@ -919,8 +992,7 @@ export function PremiumDashboard() {
                 >
                   Upload invoices
                 </a>{' '}
-                above (UPS CSV or FedEx/WWE Excel) — we run one combined Premium Analysis across all carriers after
-                each successful upload.
+                above (UPS CSV or FedEx/WWE Excel) — we run one combined Premium Analysis after all files in a batch finish uploading.
               </p>
             )}
           </div>

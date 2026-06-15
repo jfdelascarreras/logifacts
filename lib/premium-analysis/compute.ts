@@ -10,6 +10,11 @@ import {
 } from '@/lib/premium-analysis/analysis-summary'
 import { enrichSummaryWithAgentsOutputs } from '@/lib/premium-analysis/agents-outputs'
 import { buildSpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
+import { buildIngestDiagnostics, mergeParseVersions } from '@/lib/premium-analysis/ingest-diagnostics'
+import {
+  applyIngestQualityGate,
+  evaluateIngestQuality,
+} from '@/lib/premium-analysis/ingest-quality'
 import { loadPremiumIngestRecords } from '@/lib/premium-analysis/ingest-adapters'
 import type { InvoiceRecord } from '@/lib/invoices/csv'
 import type { UpsRowSyncInput } from '@/lib/invoices/invoice-rows'
@@ -31,12 +36,8 @@ export type PremiumAnalysisComputeResult = {
 }
 
 /**
- * Loads all invoices for the user across carriers via per-carrier ingest adapters,
- * merges charge lines, applies optional dashboard filters, and returns a unified summary.
- *
- * Adapter registry: `lib/premium-analysis/ingest-adapters/index.ts`
- *   • UPS  → `invoice_uploads` (CSV) or `invoices`/`invoice_lines` (multipart fallback)
- *   • FedEx / WWE → `invoices` + `invoice_lines` (multipart)
+ * Loads charge lines from `invoice_rows` (default, S6) with optional legacy rollback.
+ * Adapter registry (deprecated): `lib/premium-analysis/ingest-adapters/index.ts`
  */
 export async function computePremiumInvoiceAnalysis(
   supabase: SupabaseClient,
@@ -63,21 +64,38 @@ export async function computePremiumInvoiceAnalysis(
   }
 
   if (merged.records.length === 0) {
-    return { ok: false, status: 404, message: 'No invoice uploads found' }
+    return {
+      ok: false,
+      status: 404,
+      message:
+        'No invoice data found. Upload FedEx, WWE, or UPS invoice files on this page, then click Refresh analysis.',
+    }
   }
 
   const filterMeta = buildInvoiceAnalysisFilterMeta(merged.records)
   const records = filterInvoiceRecords(merged.records, appliedFilters)
   const mappingByDescription = buildChargeDescriptionLookup(mappings ?? [])
+  const ingestDiagnostics = buildIngestDiagnostics(
+    merged.records,
+    merged.diagnostics,
+    mappingByDescription,
+    mergeParseVersions(merged.diagnostics.parseVersions)
+  )
   const summaryBase = computeInvoiceAnalysisSummary(records, mappingByDescription)
   const periodMatrix = buildSpendShipmentPeriodMatrix(records)
-  const summaryCore = enrichSummaryWithAgentsOutputs(summaryBase, records, mappings ?? [], user)
+  const ingestQuality = evaluateIngestQuality(ingestDiagnostics, summaryBase.measures.totalCost)
+  const summaryCore = applyIngestQualityGate(
+    enrichSummaryWithAgentsOutputs(summaryBase, records, mappings ?? [], user),
+    ingestQuality
+  )
   const summaryForDashboard = {
     ...summaryCore,
     periodMatrix,
     filterMeta,
     appliedFilters,
-    ingestDiagnostics: merged.diagnostics,
+    ingestDiagnostics,
+    ingestQuality,
+    ingestSource: merged.ingestSource,
   }
 
   return {

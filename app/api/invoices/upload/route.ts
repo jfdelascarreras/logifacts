@@ -2,21 +2,13 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { detectCarrierFromBuffer, parseInvoice } from '@/lib/invoices/parsers'
 import { mapInvoiceLines } from '@/lib/invoices/mapping'
-import {
-  invoiceRowsWriteEnabled,
-  syncMultipartInvoiceRows,
-} from '@/lib/invoices/invoice-rows'
-import { redis } from '@/lib/cache/redis'
+import { syncMultipartInvoiceRows } from '@/lib/invoices/invoice-rows'
+import { FEDEX_PARSE_VERSION } from '@/lib/invoices/charge-line-contract'
+import { invalidateParseIngestCacheForUser } from '@/lib/cache/parse-ingest-cache'
+import { invalidateAnalysisCache } from '@/lib/cache/analysis-cache'
+import { retainRawInvoiceFile } from '@/lib/invoices/raw-invoice-files'
 
 export const maxDuration = 120
-
-function filterHash(filters: Record<string, unknown>): string {
-  return Buffer.from(JSON.stringify(filters, Object.keys(filters).sort())).toString('base64url')
-}
-
-function warmCacheKey(userId: string, invoiceId: string): string {
-  return `invoice_analysis:${userId}:${invoiceId}:${filterHash({})}`
-}
 
 /**
  * Recursively strip null bytes and non-printable control characters from every
@@ -136,40 +128,65 @@ export async function POST(request: Request) {
   // 7. Mark invoice as processed
   await supabase.from('invoices').update({ upload_status: 'processed' }).eq('id', invoiceId)
 
-  if (invoiceRowsWriteEnabled()) {
-    const rowSync = await syncMultipartInvoiceRows(
-      supabase,
-      user.id,
-      carrier,
-      invoiceId,
-      lines,
-      invoiceNumber,
-      invoiceDate
-    )
-    if (rowSync.error) {
-      console.warn('[invoices/upload] invoice_rows sync:', rowSync.error)
-    }
-  }
-
-  // 8. Pre-warm Redis cache with base (no-filter) result
-  if (redis) {
-    try {
-      const cacheKey = warmCacheKey(user.id, invoiceId)
-      await redis.set(cacheKey, mappedLines, { ex: 3600 })
-    } catch {
-      // non-fatal
-    }
+  let invoiceRowsSynced = 0
+  let invoiceRowsSyncError: string | undefined
+  const rowSync = await syncMultipartInvoiceRows(
+    supabase,
+    user.id,
+    invoiceId,
+    mappedLines,
+    invoiceNumber,
+    invoiceDate
+  )
+  if (rowSync.error) {
+    invoiceRowsSyncError = rowSync.error
+    console.warn('[invoices/upload] invoice_rows sync:', rowSync.error)
+  } else {
+    invoiceRowsSynced = rowSync.rowCount
   }
 
   const unmappedCount = mappedLines.filter((l) => !l.mapped).length
+  const mappedCount = mappedLines.length - unmappedCount
+  const unmappedSpend = mappedLines
+    .filter((l) => !l.mapped)
+    .reduce((sum, l) => sum + l.charge_amount, 0)
+  const shipmentsWithTracking = new Set(
+    mappedLines
+      .map((l) => (l.reference_1 ?? '').trim())
+      .filter(Boolean)
+  ).size
+  const trackingCoveragePct =
+    mappedLines.length > 0 ? (shipmentsWithTracking / mappedLines.length) * 100 : 0
+
+  await Promise.all([
+    invalidateParseIngestCacheForUser(user.id),
+    invalidateAnalysisCache(user.id),
+  ])
+
+  void retainRawInvoiceFile(supabase, {
+    userId: user.id,
+    filename,
+    carrier,
+    buffer,
+    mimeType: file.type || null,
+    sourceInvoiceId: invoiceId,
+  })
 
   return NextResponse.json({
     invoiceId,
     carrier,
     filename,
     totalLines: mappedLines.length,
-    mappedLines: mappedLines.length - unmappedCount,
+    mappedLines: mappedCount,
     unmappedLines: unmappedCount,
     totalAmount,
+    parseVersion: carrier === 'FedEx' ? FEDEX_PARSE_VERSION : undefined,
+    ingestQuality: {
+      mappedPct: mappedLines.length > 0 ? (mappedCount / mappedLines.length) * 100 : 100,
+      unmappedSpend: +unmappedSpend.toFixed(2),
+      trackingCoveragePct: +trackingCoveragePct.toFixed(1),
+      invoiceRowsSynced,
+      ...(invoiceRowsSyncError ? { invoiceRowsSyncError } : {}),
+    },
   })
 }

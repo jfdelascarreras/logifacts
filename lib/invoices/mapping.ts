@@ -70,6 +70,11 @@ export async function mapInvoiceLines(
       charge_classification_code: line.charge_classification_code ?? null,
       charge_category_code: line.charge_category_code ?? null,
       package_quantity: line.package_quantity ?? null,
+      account_number: line.account_number ?? null,
+      billed_weight: line.billed_weight ?? null,
+      entered_weight: line.entered_weight ?? null,
+      transaction_date: line.transaction_date ?? null,
+      parse_version: line.parse_version ?? null,
     }
   })
 }

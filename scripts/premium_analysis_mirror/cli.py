@@ -1,4 +1,4 @@
-"""CLI — replaces legacy scripts/invoice_analysis/cli.py (TS engine parity)."""
+"""CLI — mirrors lib/premium-analysis compute + agents layer (S1–S6 offline parity)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,16 @@ import sys
 import time
 from pathlib import Path
 
-from .constants import DEFAULT_MAPPING_FILE, DEFAULT_OUTPUT_DIR
+from .agents_outputs import enrich_summary_with_agents_outputs
+from .constants import DEFAULT_MAPPING_FILE, DEFAULT_OUTPUT_DIR, UPS_PARSE_VERSION
 from .engine import compute_invoice_analysis_summary
 from .export import build_summary_tables, export_combined_invoice_mapped, export_workbook
+from .export_html import export_html_report
 from .ingest import ingest_folder
+from .ingest_diagnostics import build_ingest_diagnostics, empty_ingest_diagnostics
 from .mapping import build_charge_description_lookup, load_master_mapping_xlsx
 from .records import enrich_records, records_to_dataframe, unmapped_charge_summary
+from .stale_ingest import detect_stale_ingest
 from .test_golden import run_golden_test
 from .utils import fmt_money
 
@@ -36,6 +40,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"Output folder (default: {DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument("--output-name", default="invoice_kpi_dashboard.xlsx", help="Excel workbook filename")
+    parser.add_argument(
+        "--html-name",
+        default="",
+        help="HTML report filename under --output-dir (default: same stem as --output-name)",
+    )
     parser.add_argument(
         "--combined-file",
         default="",
@@ -69,13 +78,18 @@ def main(argv: list[str] | None = None) -> int:
         from .primitives import filter_rows_like_club_colors
 
         records = filter_rows_like_club_colors(parse_ups_csv_file(args.csv.expanduser().resolve()))
+        for rec in records:
+            rec["_parse_version"] = UPS_PARSE_VERSION
         records, dedupe_dropped = dedupe_records_stable(records)
-        ingest_diag = {
-            "filesLoaded": 1,
-            "rowsDroppedCriticalSciCorruption": 0,
-            "rowsDroppedDateGate": 0,
-            "duplicateChargeRowsDropped": dedupe_dropped,
-        }
+        ingest_diag = build_ingest_diagnostics(
+            records,
+            {
+                **empty_ingest_diagnostics(),
+                "filesLoaded": 1,
+                "duplicateChargeRowsDropped": dedupe_dropped,
+            },
+            lookup,
+        )
         file_structure_log: list[dict[str, object]] = [{"File": args.csv.name, "Status": "OK", "Carrier": "UPS"}]
         input_label = str(args.csv)
     elif args.input_dir:
@@ -88,12 +102,17 @@ def main(argv: list[str] | None = None) -> int:
         print("=" * 52)
         ingest = ingest_folder(input_dir, recursive=not args.no_recursive)
         records = ingest.records
-        ingest_diag = {
-            "filesLoaded": ingest.files_loaded,
-            "rowsDroppedCriticalSciCorruption": ingest.rows_dropped_sci,
-            "rowsDroppedDateGate": ingest.rows_dropped_date_gate,
-            "duplicateChargeRowsDropped": ingest.rows_dropped_charge_dedupe,
-        }
+        ingest_diag = build_ingest_diagnostics(
+            records,
+            {
+                **empty_ingest_diagnostics(),
+                "filesLoaded": ingest.files_loaded,
+                "rowsDroppedCriticalSciCorruption": ingest.rows_dropped_sci,
+                "rowsDroppedDateGate": ingest.rows_dropped_date_gate,
+                "duplicateChargeRowsDropped": ingest.rows_dropped_charge_dedupe,
+            },
+            lookup,
+        )
         file_structure_log = ingest.file_structure_log
         input_label = str(input_dir)
     else:
@@ -102,14 +121,33 @@ def main(argv: list[str] | None = None) -> int:
 
     enriched = enrich_records(records, lookup)
     df = records_to_dataframe(enriched)
-    summary = compute_invoice_analysis_summary(records, lookup)
-    summary["ingestDiagnostics"] = ingest_diag
+    summary_core = compute_invoice_analysis_summary(records, lookup)
+    summary = enrich_summary_with_agents_outputs(
+        summary_core, records, mapping_rows, lookup, ingest_diag
+    )
+
+    carriers = list(summary.get("byCarrier", {}).keys())
+    stale = detect_stale_ingest(ingest_diag.get("parseVersions") or [], carriers)
+    if stale["needsReupload"]:
+        summary["staleIngest"] = stale
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_file = output_dir / args.output_name
+    html_name = str(args.html_name).strip() or f"{output_file.stem}.html"
+    html_file = output_dir / html_name
     tables = build_summary_tables(summary, df, ingest_diag)
     unmapped = unmapped_charge_summary(df)
     export_workbook(df, tables, pd.DataFrame(file_structure_log), unmapped, output_file)
+    export_html_report(
+        summary,
+        tables,
+        pd.DataFrame(file_structure_log),
+        unmapped,
+        ingest_diag,
+        input_label=input_label,
+        output_path=html_file,
+        row_count=len(df),
+    )
 
     combined_name = str(args.combined_file).strip()
     if combined_name:
@@ -124,14 +162,39 @@ def main(argv: list[str] | None = None) -> int:
 
     m = summary["measures"]
     print("\n" + "-" * 52)
-    print(" KPI SUMMARY (TS engine)")
+    print(" KPI SUMMARY (TS engine + agents)")
     print("-" * 52)
     print(f"  Total cost     : {fmt_money(m['totalCost'])}")
     print(f"  Fuel           : {fmt_money(m['fuelCost'])}")
     print(f"  Accessorials   : {fmt_money(m['costAccessorials'])}")
     print(f"  Packages       : {m['totalPackages']:,.0f}")
     print(f"  Shipments      : {m['packageDedupeShipmentCount']:,}")
+    print(f"  Weight gap     : {m['weightGap']:,.0f} lbs (shipment grain)")
     print("-" * 52)
+
+    diag = summary.get("ingestDiagnostics") or ingest_diag
+    print(f"  Mapped lines   : {diag.get('linesMapped', 0):,} / {diag.get('linesTotal', 0):,}")
+    print(f"  Unmapped spend : {fmt_money(float(diag.get('unmappedSpend') or 0))}")
+    print(f"  Parse versions : {', '.join(diag.get('parseVersions') or []) or '(none)'}")
+
+    quality = summary.get("ingestQuality") or {}
+    if quality.get("reason"):
+        print(f"  Quality gate   : {quality['reason']}")
+
+    savings = summary.get("savingsEstimate")
+    if savings:
+        print(f"  Savings (ann.) : {fmt_money(savings['low'])} – {fmt_money(savings['high'])}")
+    elif quality.get("blockSavings"):
+        print("  Savings (ann.) : blocked (ingest quality gate)")
+
+    flags = summary.get("anomalyFlags") or []
+    if flags:
+        print(f"  Anomaly flags  : {len(flags)}")
+
+    if stale.get("needsReupload"):
+        print("\n STALE INGEST WARNINGS")
+        for reason in stale.get("reasons") or []:
+            print(f"  • {reason}")
 
     if not tables["cost_by_file"].empty:
         print("\n COST BY SOURCE FILE")
@@ -146,6 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Source         : {input_label}")
     print(f"Execution time : {elapsed}s")
     print(f"Workbook       : {output_file}")
+    print(f"HTML report    : {html_file}")
     print(f"Rows analyzed  : {len(df):,}")
     print(f"Unmapped lines : {(~df['mapped']).sum():,}" if "mapped" in df.columns else "")
     print("=" * 52)

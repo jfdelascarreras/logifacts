@@ -11,8 +11,8 @@ import {
 import {
   analyzeParseCacheFingerprint,
   analyzeParseCacheKey,
-  getAnalyzeParseCache,
-  setAnalyzeParseCache,
+  getAnalyzeParseCacheAsync,
+  setAnalyzeParseCacheAsync,
 } from '@/lib/premium-analysis/analyze-parse-cache'
 import { contentSha256FromStoredCsv } from '@/lib/invoices/dedupe-hash-server'
 import type { UpsRowSyncInput } from '@/lib/invoices/invoice-rows'
@@ -120,7 +120,7 @@ export const upsCsvIngestAdapter: CarrierIngestAdapter = {
       ctx.user.id,
       analyzeParseCacheFingerprint(deduped)
     )
-    const cached = getAnalyzeParseCache(parseCacheKey, ctx.profileCompanyName)
+    const cached = await getAnalyzeParseCacheAsync(parseCacheKey, ctx.profileCompanyName)
 
     let fullRecords: InvoiceRecord[]
     let upsSyncTagged: UpsRowSyncInput[]
@@ -142,8 +142,15 @@ export const upsCsvIngestAdapter: CarrierIngestAdapter = {
         duplicateUploadRowsSkipped,
         duplicateChargeRowsDropped: built.duplicateChargeRowsDropped,
         rowsDroppedCriticalSciCorruption: built.rowsDroppedCriticalSciCorruption,
+        linesTotal: 0,
+        linesMapped: 0,
+        unmappedSpend: 0,
+        shipmentsTotal: 0,
+        shipmentsWithoutTracking: 0,
+        linesMissingShipDate: 0,
+        parseVersions: [],
       }
-      setAnalyzeParseCache(
+      await setAnalyzeParseCacheAsync(
         parseCacheKey,
         ctx.profileCompanyName,
         fullRecords,

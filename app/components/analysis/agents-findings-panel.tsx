@@ -21,6 +21,7 @@ import type {
   AnomalyFlag,
   CarrierMixRow,
   DatasetFlags,
+  IngestQualityGate,
   SavingsEstimate,
 } from '@/lib/premium-analysis/agents-types'
 import type { SpecCategoriesSummary } from '@/lib/premium-analysis/spec-categories'
@@ -41,6 +42,7 @@ type Props = {
     savingsEstimate?: SavingsEstimate
     actionItems?: ActionItem[]
     datasetFlags?: DatasetFlags
+    ingestQuality?: IngestQualityGate
   } | null
 }
 
@@ -52,6 +54,7 @@ export function AgentsFindingsPanel({ summary }: Props) {
   const savings = summary.savingsEstimate
   const actions = summary.actionItems ?? []
   const dataset = summary.datasetFlags
+  const ingestQuality = summary.ingestQuality
 
   return (
     <div className="space-y-4">
@@ -132,6 +135,12 @@ export function AgentsFindingsPanel({ summary }: Props) {
         </Card>
       ) : null}
 
+      {ingestQuality?.blockSavings ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          Savings estimates are hidden: {ingestQuality.reason}
+        </p>
+      ) : null}
+
       {savings ? (
         <Card className="overflow-hidden border-emerald-300/60 bg-gradient-to-br from-emerald-50/90 via-card to-card dark:from-emerald-950/30">
           <CardHeader className="pb-2">
@@ -165,7 +174,7 @@ export function AgentsFindingsPanel({ summary }: Props) {
         </Card>
       ) : null}
 
-      {actions.length ? (
+      {actions.length && !ingestQuality?.blockSavings ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Prioritized actions</CardTitle>

@@ -170,7 +170,15 @@ Run before trusting dashboard numbers:
 | Entry point | Role |
 |-------------|------|
 | `scripts/run_invoice_analysis.py` | **Primary CLI** — folder or single CSV |
-| `scripts/premium_analysis_mirror/` | Engine, ingest, export (TS parity) |
+| `scripts/premium_analysis_mirror/` | Engine, ingest, agents layer (S1–S6 parity) |
+
+**Mirror modules (2026-06):** FedEx v2 parser, shipment facts, ingest diagnostics/quality gates, marginal expedited premium, fuel rerate, savings estimator with spend cap, stale ingest detection.
+
+```bash
+python3 scripts/run_invoice_analysis.py --golden
+python3 scripts/premium_analysis_mirror/test_agents_mirror.py
+python3 scripts/run_invoice_analysis.py --input-dir "./Invoices skills/examples/WWE_Swiftpause" --json-out outputs/invoice_analysis/summary.json
+```
 
 Legacy `scripts/invoice_analysis/` and `scripts/map_club_colors_invoices.py` were removed (2026-06-11); they used divergent measure definitions and are not part of the app pipeline.
 

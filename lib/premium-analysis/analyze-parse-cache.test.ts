@@ -28,6 +28,13 @@ describe('analyze-parse-cache', () => {
       duplicateUploadRowsSkipped: 0,
       duplicateChargeRowsDropped: 0,
       rowsDroppedCriticalSciCorruption: 0,
+      linesTotal: 0,
+      linesMapped: 0,
+      unmappedSpend: 0,
+      shipmentsTotal: 0,
+      shipmentsWithoutTracking: 0,
+      linesMissingShipDate: 0,
+      parseVersions: [],
     })
     expect(getAnalyzeParseCache(key, 'Acme')).toEqual({
       fullRecords: [],
@@ -36,6 +43,13 @@ describe('analyze-parse-cache', () => {
         duplicateUploadRowsSkipped: 0,
         duplicateChargeRowsDropped: 0,
         rowsDroppedCriticalSciCorruption: 0,
+        linesTotal: 0,
+        linesMapped: 0,
+        unmappedSpend: 0,
+        shipmentsTotal: 0,
+        shipmentsWithoutTracking: 0,
+        linesMissingShipDate: 0,
+        parseVersions: [],
       },
     })
     expect(getAnalyzeParseCache(key, 'Other')).toBeNull()

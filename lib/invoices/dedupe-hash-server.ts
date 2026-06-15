@@ -40,15 +40,25 @@ export function invoiceRowHashMultipart(
     net_amount: string | number
     shipment_date?: string | null
     reference_1?: string | null
+    tracking_id?: string | null
+    service_level?: string | null
+    charge_classification_code?: string | null
+    charge_category_code?: string | null
+    package_quantity?: number | null
+    account_number?: string | null
+    billed_weight?: number | null
+    entered_weight?: number | null
+    transaction_date?: string | null
+    parse_version?: string | null
   }
 ): string {
   const key = [
     carrier.trim().toUpperCase(),
     (fields.invoice_number ?? '').trim(),
+    (fields.tracking_id ?? fields.reference_1 ?? '').trim(),
     fields.charge_description.trim().toUpperCase(),
     String(fields.net_amount).trim(),
     (fields.shipment_date ?? '').trim(),
-    (fields.reference_1 ?? '').trim(),
   ].join('\0')
   return sha256HexUtf8Sync(key)
 }

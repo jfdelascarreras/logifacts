@@ -6,11 +6,8 @@
  * Two-step flow:
  *   1. User selects files (drag-drop or picker) → files queue as "staged" (not yet uploaded).
  *   2. User reviews the list, then clicks "Upload [n] file(s)".
- *   3. After all uploads complete, a "Go to analysis" button navigates to /premium-analysis.
- *
- * After each successful upload:
- *   - Calls POST /api/invoices/analyze to recompute the Premium Analysis summary.
- *   - Dispatches PREMIUM_ANALYSIS_UPDATED so <PremiumDashboard> auto-refreshes.
+ *   3. All files upload sequentially; one combined analyze runs at the end (S4 batch).
+ *   4. After batch analyze, a "Go to analysis" button navigates to /premium-analysis.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -36,7 +33,7 @@ interface UploadResult {
 type FileStatus =
   | { state: 'staged' }
   | { state: 'uploading' }
-  | { state: 'analyzing' }
+  | { state: 'uploaded'; result: UploadResult }
   | { state: 'done'; result: UploadResult }
   | { state: 'error'; message: string }
 
@@ -76,16 +73,25 @@ export function InvoiceUploadPanel() {
   const [queue, setQueue] = useState<QueuedFile[]>([])
   const [dragging, setDragging] = useState(false)
   const [running, setRunning] = useState(false)
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false)
   const [allDone, setAllDone] = useState(false)
   const processingRef = useRef(false)
 
   const stagedCount = queue.filter((q) => q.status.state === 'staged').length
-  const hasAnyActive = queue.some(
-    (q) => q.status.state === 'uploading' || q.status.state === 'analyzing'
-  )
+  const hasAnyActive = queue.some((q) => q.status.state === 'uploading') || batchAnalyzing
 
   function updateItem(id: string, status: FileStatus) {
     setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status } : q)))
+  }
+
+  function markUploadedAsDone() {
+    setQueue((prev) =>
+      prev.map((q) =>
+        q.status.state === 'uploaded'
+          ? { ...q, status: { state: 'done', result: q.status.result } }
+          : q
+      )
+    )
   }
 
   const stage = useCallback((files: FileList | File[]) => {
@@ -100,7 +106,7 @@ export function InvoiceUploadPanel() {
     setQueue((prev) => [...prev, ...newItems])
   }, [])
 
-  async function uploadOne(item: QueuedFile) {
+  async function uploadOne(item: QueuedFile): Promise<boolean> {
     updateItem(item.id, { state: 'uploading' })
     try {
       const form = new FormData()
@@ -108,20 +114,14 @@ export function InvoiceUploadPanel() {
       const res = await fetch('/api/invoices/upload', { method: 'POST', body: form })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Upload failed')
-
-      updateItem(item.id, { state: 'analyzing' })
-      const analyzed = await triggerAnalysis()
-      if (!analyzed.ok) {
-        throw new Error(
-          `${analyzed.error} File was saved — use Refresh analysis on the dashboard to load your full dataset.`
-        )
-      }
-      updateItem(item.id, { state: 'done', result: json as UploadResult })
+      updateItem(item.id, { state: 'uploaded', result: json as UploadResult })
+      return true
     } catch (err) {
       updateItem(item.id, {
         state: 'error',
         message: err instanceof Error ? err.message : String(err),
       })
+      return false
     }
   }
 
@@ -131,10 +131,34 @@ export function InvoiceUploadPanel() {
     setRunning(true)
     setAllDone(false)
 
-    // Only process items that are currently staged
     const toProcess = queue.filter((q) => q.status.state === 'staged')
+    let uploadedCount = 0
     for (const item of toProcess) {
-      await uploadOne(item)
+      const ok = await uploadOne(item)
+      if (ok) uploadedCount += 1
+    }
+
+    if (uploadedCount > 0) {
+      setBatchAnalyzing(true)
+      const analyzed = await triggerAnalysis()
+      setBatchAnalyzing(false)
+      if (!analyzed.ok) {
+        setQueue((prev) =>
+          prev.map((q) =>
+            q.status.state === 'uploaded'
+              ? {
+                  ...q,
+                  status: {
+                    state: 'error',
+                    message: `${analyzed.error} Files were saved — use Refresh analysis on the dashboard.`,
+                  },
+                }
+              : q
+          )
+        )
+      } else {
+        markUploadedAsDone()
+      }
     }
 
     processingRef.current = false
@@ -230,16 +254,16 @@ export function InvoiceUploadPanel() {
 
           {/* Action bar */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {/* Upload button — only while there are staged files */}
             {stagedCount > 0 && !allDone && (
               <Button onClick={() => void handleUpload()} disabled={running || hasAnyActive}>
                 {running
-                  ? 'Uploading…'
+                  ? batchAnalyzing
+                    ? 'Analyzing combined dataset…'
+                    : 'Uploading…'
                   : `Upload ${stagedCount} file${stagedCount !== 1 ? 's' : ''}`}
               </Button>
             )}
 
-            {/* Go to analysis — shown once every file is settled */}
             {allDone && stagedCount === 0 && (
               <Button onClick={() => router.push('/premium-analysis')}>
                 Go to analysis ↓
@@ -273,18 +297,22 @@ function FileRow({
   disabled: boolean
 }) {
   const { id, file, status } = item
+  const result =
+    status.state === 'done' || status.state === 'uploaded' ? status.result : null
 
   return (
     <Card>
       <CardContent className="pt-4 pb-4">
         <div className="flex items-start gap-3">
-          {/* Status icon */}
           <div className="mt-0.5 flex-shrink-0 w-5 flex justify-center">
             {status.state === 'staged' && (
               <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30" />
             )}
-            {(status.state === 'uploading' || status.state === 'analyzing') && (
+            {(status.state === 'uploading' || (status.state === 'uploaded' && disabled)) && (
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            )}
+            {status.state === 'uploaded' && !disabled && (
+              <span className="text-muted-foreground text-base leading-none">○</span>
             )}
             {status.state === 'done' && (
               <span className="text-green-600 text-base leading-none">✓</span>
@@ -303,42 +331,45 @@ function FileRow({
             {status.state === 'uploading' && (
               <p className="text-xs text-muted-foreground mt-0.5">Parsing and mapping charge lines…</p>
             )}
-            {status.state === 'analyzing' && (
-              <p className="text-xs text-muted-foreground mt-0.5">Updating analysis…</p>
+            {status.state === 'uploaded' && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {disabled ? 'Included in combined analysis…' : 'Uploaded — waiting for batch analysis'}
+              </p>
             )}
             {status.state === 'error' && (
               <p className="text-xs text-destructive mt-0.5">{status.message}</p>
             )}
-            {status.state === 'done' && (
+            {result && (status.state === 'done' || status.state === 'uploaded') && (
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 <span>
                   <span className="text-muted-foreground">Carrier </span>
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    {status.result.carrier}
+                    {result.carrier}
                   </Badge>
                 </span>
                 <span>
                   <span className="text-muted-foreground">Lines </span>
-                  <span className="font-semibold">{status.result.totalLines.toLocaleString()}</span>
+                  <span className="font-semibold">{result.totalLines.toLocaleString()}</span>
                 </span>
                 <span>
                   <span className="text-muted-foreground">Mapped </span>
                   <span className="font-semibold text-green-600">
-                    {status.result.mappedLines.toLocaleString()}
+                    {result.mappedLines.toLocaleString()}
                   </span>
                 </span>
                 <span>
                   <span className="text-muted-foreground">Amount </span>
                   <span className="font-semibold">
-                    ${status.result.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    ${result.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </span>
                 </span>
-                <span className="text-muted-foreground">Included in combined Premium Analysis ↑</span>
+                {status.state === 'done' ? (
+                  <span className="text-muted-foreground">Included in combined Premium Analysis ↑</span>
+                ) : null}
               </div>
             )}
           </div>
 
-          {/* Remove button — only for staged files */}
           {status.state === 'staged' && (
             <button
               type="button"
@@ -357,8 +388,6 @@ function FileRow({
     </Card>
   )
 }
-
-// ── Constants ─────────────────────────────────────────────────────────────────
 
 const CARRIER_CHIPS = [
   {

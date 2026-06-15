@@ -73,9 +73,15 @@ def parse_invoice_date_key(raw: Any) -> str | None:
     if not value:
         return None
     date_only = re.split(r"[T\s]", value)[0]
+
+    year = month = day = 0
     us = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", date_only)
     iso = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", date_only)
-    if iso:
+    compact = re.match(r"^(\d{4})(\d{2})(\d{2})$", date_only)
+
+    if compact:
+        year, month, day = int(compact[1]), int(compact[2]), int(compact[3])
+    elif iso:
         year, month, day = int(iso[1]), int(iso[2]), int(iso[3])
     elif us:
         month, day, year = int(us[1]), int(us[2]), int(us[3])
@@ -179,6 +185,18 @@ def filter_rows_like_club_colors(records: list[dict[str, Any]]) -> list[dict[str
         elif has_real_date_value("Invoice Date", rec):
             out.append(rec)
     return out
+
+
+def year_month_key_from_engine_month_label(label: str) -> str | None:
+    parts = label.split()
+    if len(parts) < 2:
+        return None
+    month_name, year_text = parts[0], parts[-1]
+    try:
+        mi = datetime.strptime(f"{month_name} 1, {year_text}", "%B %d, %Y").month
+    except ValueError:
+        return None
+    return f"{year_text}-{mi:02d}"
 
 
 def iso_week_year_from_date_key(date_key: str) -> tuple[int, int]:

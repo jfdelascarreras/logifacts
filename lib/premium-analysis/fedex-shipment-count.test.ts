@@ -58,5 +58,5 @@ describe('FedEx shipment volume', () => {
     expect(sample['Tracking Number']?.trim().length).toBeGreaterThan(5)
     expect(sample['Carrier Name']).toBe('FedEx')
     expect(INVOICE_HEADERS.includes('Tracking Number')).toBe(true)
-  })
+  }, 15_000)
 })

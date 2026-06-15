@@ -1,5 +1,7 @@
 import type { SpecCategoriesSummary } from '@/lib/premium-analysis/spec-categories'
 
+export type { IngestQualityGate } from '@/lib/premium-analysis/ingest-quality'
+
 export type AnomalyFlagType =
   | 'fuel_over_eia'
   | 'accessorial_rate_high'
@@ -71,4 +73,6 @@ export type AgentsAnalysisExtensions = {
   savingsEstimate?: SavingsEstimate
   actionItems?: ActionItem[]
   datasetFlags?: DatasetFlags
+  ingestQuality?: import('@/lib/premium-analysis/ingest-quality').IngestQualityGate
+  ingestSource?: 'invoice_rows' | 'legacy'
 }

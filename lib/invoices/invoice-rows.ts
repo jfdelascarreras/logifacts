@@ -2,8 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { InvoiceRecord } from './csv'
 import { invoiceRowHash, invoiceRowHashMultipart } from './dedupe-hash-server'
-import type { ParsedInvoiceLine } from './parsers/types'
-import type { Carrier } from '@/types/invoice'
+import type { Carrier, InvoiceLine } from '@/types/invoice'
 
 export const INVOICE_ROWS_UPSERT_CHUNK = 500
 
@@ -37,6 +36,13 @@ export type InvoiceRowInsert = {
   original_service_description?: string | null
   lead_shipment_number?: string | null
   shipment_reference_number_1?: string | null
+  mapped?: boolean | null
+  standardized_charge?: string | null
+  category_1?: string | null
+  category_2?: string | null
+  category_3?: string | null
+  parse_version?: string | null
+  shipment_date?: string | null
 }
 
 function textOrNull(value: string | null | undefined): string | null {
@@ -91,8 +97,62 @@ export function invoiceRecordToRow(
   }
 }
 
+export type MappedMultipartLine = Omit<InvoiceLine, 'id'>
+
+export function mappedMultipartLineToRow(
+  line: MappedMultipartLine,
+  userId: string,
+  sourceInvoiceId: string,
+  invoiceNumber: string | null,
+  invoiceDate: string | null
+): InvoiceRowInsert {
+  const netNum = amountOrNull(line.charge_amount)
+  const netStr = amountText(line.charge_amount)
+  return {
+    user_id: userId,
+    row_hash: invoiceRowHashMultipart(line.carrier, {
+      invoice_number: invoiceNumber,
+      charge_description: line.charge_description,
+      net_amount: netStr ?? String(line.charge_amount),
+      shipment_date: line.shipment_date ?? invoiceDate,
+      tracking_id: line.reference_1,
+      reference_1: line.reference_1,
+    }),
+    invoice_upload_id: null,
+    source_invoice_id: sourceInvoiceId,
+    account_number: textOrNull(line.account_number),
+    invoice_date: textOrNull(invoiceDate ?? line.shipment_date),
+    invoice_number: textOrNull(invoiceNumber),
+    tracking_number: textOrNull(line.reference_1),
+    charge_category_code: textOrNull(line.charge_category_code),
+    charge_category_detail_code: null,
+    charge_classification_code: textOrNull(line.charge_classification_code),
+    charge_description_code: null,
+    charge_description: textOrNull(line.charge_description),
+    net_amount: netNum,
+    invoice_amount: netNum,
+    duty_amount: null,
+    billed_weight: line.billed_weight ?? null,
+    entered_weight: line.entered_weight ?? null,
+    package_quantity: line.package_quantity ?? null,
+    zone: textOrNull(line.zone),
+    carrier_name: line.carrier,
+    original_service_description: textOrNull(line.service_level),
+    lead_shipment_number: null,
+    shipment_reference_number_1: textOrNull(line.reference_1),
+    mapped: line.mapped,
+    standardized_charge: textOrNull(line.standardized_charge),
+    category_1: textOrNull(line.category_1),
+    category_2: textOrNull(line.category_2),
+    category_3: textOrNull(line.category_3),
+    parse_version: textOrNull(line.parse_version),
+    shipment_date: textOrNull(line.shipment_date),
+  }
+}
+
+/** @deprecated Use mappedMultipartLineToRow — retained for tests mirroring old path. */
 export function parsedLineToRow(
-  line: ParsedInvoiceLine,
+  line: import('./parsers/types').ParsedInvoiceLine,
   userId: string,
   carrier: Carrier,
   sourceInvoiceId: string,
@@ -108,11 +168,12 @@ export function parsedLineToRow(
       charge_description: line.charge_description,
       net_amount: netStr ?? String(line.charge_amount),
       shipment_date: line.shipment_date ?? invoiceDate,
+      tracking_id: line.tracking_id ?? line.reference_1,
       reference_1: line.reference_1,
     }),
     invoice_upload_id: null,
     source_invoice_id: sourceInvoiceId,
-    account_number: null,
+    account_number: textOrNull(line.account_number),
     invoice_date: textOrNull(line.invoice_date ?? invoiceDate),
     invoice_number: textOrNull(line.invoice_number ?? invoiceNumber),
     tracking_number: textOrNull(line.tracking_id),
@@ -124,14 +185,21 @@ export function parsedLineToRow(
     net_amount: netNum,
     invoice_amount: netNum,
     duty_amount: null,
-    billed_weight: null,
-    entered_weight: null,
+    billed_weight: line.billed_weight ?? null,
+    entered_weight: line.entered_weight ?? null,
     package_quantity: line.package_quantity ?? null,
     zone: textOrNull(line.zone),
     carrier_name: carrier,
     original_service_description: textOrNull(line.service_level),
     lead_shipment_number: null,
     shipment_reference_number_1: textOrNull(line.tracking_id ?? line.reference_1),
+    mapped: null,
+    standardized_charge: null,
+    category_1: null,
+    category_2: null,
+    category_3: null,
+    parse_version: textOrNull(line.parse_version),
+    shipment_date: textOrNull(line.shipment_date),
   }
 }
 
@@ -195,14 +263,15 @@ export async function syncUpsInvoiceRows(
 export async function syncMultipartInvoiceRows(
   supabase: SupabaseClient,
   userId: string,
-  carrier: Carrier,
   sourceInvoiceId: string,
-  lines: ParsedInvoiceLine[],
+  mappedLines: MappedMultipartLine[],
   invoiceNumber: string | null,
   invoiceDate: string | null
 ): Promise<{ error?: string; rowCount: number }> {
-  const rows = lines.map((line) =>
-    parsedLineToRow(line, userId, carrier, sourceInvoiceId, invoiceNumber, invoiceDate)
+  await deleteInvoiceRowsForSourceInvoice(supabase, userId, sourceInvoiceId)
+
+  const rows = mappedLines.map((line) =>
+    mappedMultipartLineToRow(line, userId, sourceInvoiceId, invoiceNumber, invoiceDate)
   )
   const { error, inserted } = await upsertInvoiceRows(supabase, rows)
   if (error) return { error, rowCount: 0 }

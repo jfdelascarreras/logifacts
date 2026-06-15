@@ -9,6 +9,7 @@ import {
   type InvoiceRecord,
 } from '@/lib/invoices/csv'
 import type { AgentsAnalysisExtensions } from '@/lib/premium-analysis/agents-types'
+import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
 import type { SpecCategoriesSummary } from '@/lib/premium-analysis/spec-categories'
 
 import type { SpendShipmentPeriodMatrix } from './period-averages-matrix'
@@ -160,12 +161,8 @@ export type InvoiceAnalysisSummary = {
   filterMeta?: InvoiceAnalysisFilterMeta
   /** Echo of server-side filters used for this summary (subset view when any filter is active). */
   appliedFilters?: InvoiceAnalysisFilters
-  /** Populated after ingest sanitization / dedupe (Premium Analysis CSV pipeline). */
-  ingestDiagnostics?: {
-    duplicateUploadRowsSkipped: number
-    duplicateChargeRowsDropped: number
-    rowsDroppedCriticalSciCorruption: number
-  }
+  /** Populated after ingest sanitization / dedupe (Premium Analysis pipeline). */
+  ingestDiagnostics?: PremiumParseIngestDiagnostics
   /** Average spend & shipments by year, month, and ISO week-of-year. */
   periodMatrix?: SpendShipmentPeriodMatrix
   specCategories?: SpecCategoriesSummary
@@ -412,8 +409,13 @@ export function parseInvoiceDateKey(raw: string | null): string | null {
 
   const usStyle = dateOnly.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/)
   const isoStyle = dateOnly.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/)
+  const compactStyle = dateOnly.match(/^(\d{4})(\d{2})(\d{2})$/)
 
-  if (isoStyle) {
+  if (compactStyle) {
+    year = Number(compactStyle[1])
+    month = Number(compactStyle[2])
+    day = Number(compactStyle[3])
+  } else if (isoStyle) {
     year = Number(isoStyle[1])
     month = Number(isoStyle[2])
     day = Number(isoStyle[3])

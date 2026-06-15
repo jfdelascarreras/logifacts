@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .constants import UPS_CRITICAL_COLUMNS, UPS_HEADERS
+from .constants import FEDEX_PARSE_VERSION, UPS_CRITICAL_COLUMNS, UPS_HEADERS, WWE_PARSE_VERSION
 from .utils import (
     carrier_display_name,
     empty_standard_row,
@@ -110,7 +110,18 @@ def fedex_tracking_id_column(header_row: pd.Series) -> int:
     return fedex_header_column(header_row, EXPRESS_GROUND_TRACKING_RE, 9)
 
 
+def _fedex_positive_weight(row: pd.Series, col: int) -> float | None:
+    n = excel_cell_num(row, col)
+    return n if n > 0 else None
+
+
+def _fedex_positive_int(row: pd.Series, col: int) -> int | None:
+    n = int(round(excel_cell_num(row, col)))
+    return n if n > 0 else None
+
+
 def parse_fedex_file(path: Path) -> pd.DataFrame:
+    """FedEx v2 — mirrors lib/invoices/parsers/fedex.ts (weights, accounts, tracking)."""
     raw = read_excel_raw(path)
     if raw.shape[0] < 2:
         return pd.DataFrame()
@@ -130,6 +141,14 @@ def parse_fedex_file(path: Path) -> pd.DataFrame:
         shipment_date = excel_cell_str(row, 14)
         recipient_state = excel_cell_str(row, 38)
         zone_code = excel_cell_str(row, 64)
+        bill_to_account = excel_cell_str(row, 1)
+        consolidated_account = excel_cell_str(row, 0)
+        account_number = bill_to_account or consolidated_account
+        entered_weight = _fedex_positive_weight(row, 19)
+        billed_weight = _fedex_positive_weight(row, 21)
+        package_qty = _fedex_positive_int(row, 23) or 1
+        tendered_date = excel_cell_str(row, 105)
+        transaction_date = tendered_date or shipment_date
 
         if not invoice_date or re.match(r"^(invoice|date)\b", invoice_date, re.I):
             continue
@@ -137,6 +156,8 @@ def parse_fedex_file(path: Path) -> pd.DataFrame:
             continue
 
         tracking_id = excel_cell_str(row, tracking_col)
+        if tracking_id and is_sci_notation_corrupted(tracking_id):
+            continue
 
         def push_line(charge_desc: str, amount: float) -> None:
             if not charge_desc:
@@ -147,16 +168,21 @@ def parse_fedex_file(path: Path) -> pd.DataFrame:
                 "Source File": path.name,
                 "Invoice Date": invoice_date,
                 "Invoice Number": invoice_number,
+                "Account Number": account_number,
                 "Tracking Number": tracking_id,
                 "Shipment Reference Number 1": tracking_id,
                 "Charge Description": charge_desc,
                 "Net Amount": amount,
                 "Invoice Amount": amount,
-                "Package Quantity": 1,
+                "Package Quantity": package_qty,
+                "Billed Weight": billed_weight if billed_weight is not None else "",
+                "Entered Weight": entered_weight if entered_weight is not None else "",
                 "Zone": zone_code,
                 "Original Service Description": service_type,
                 "Receiver State": recipient_state,
                 "Shipment Date": shipment_date,
+                "Transaction Date": transaction_date,
+                "_parse_version": FEDEX_PARSE_VERSION,
             })
             rows.append(rec)
 
@@ -208,6 +234,7 @@ def parse_wwe_file(path: Path) -> pd.DataFrame:
                 "Invoice Date": invoice_date or ship_date,
                 "Invoice Number": invoice_number,
                 "Tracking Number": airbill,
+                "Shipment Reference Number 1": airbill,
                 "Charge Description": charge_type,
                 "Net Amount": charge_amt,
                 "Invoice Amount": charge_amt,
@@ -216,6 +243,8 @@ def parse_wwe_file(path: Path) -> pd.DataFrame:
                 "Original Service Description": service_level,
                 "Receiver State": receiver_state,
                 "Shipment Date": ship_date,
+                "Transaction Date": ship_date,
+                "_parse_version": WWE_PARSE_VERSION,
             })
             rows.append(rec)
 
@@ -286,10 +315,16 @@ def excel_to_ups_shape(df: pd.DataFrame) -> pd.DataFrame:
         "Charge Description", "Net Amount", "Invoice Amount", "Duty Amount",
         "Package Quantity", "Billed Weight", "Entered Weight", "Zone",
         "Charge Classification Code", "Charge Category Code", "Original Service Description",
-        "Receiver State", "Sender Company Name", "Shipment Date",
+        "Receiver State", "Sender Company Name", "Shipment Date", "Transaction Date",
     ]:
         if col in df.columns:
             out[col] = df[col].values
+
+    if "_parse_version" in df.columns:
+        out["_parse_version"] = df["_parse_version"].values
+
+    if "Source File" in df.columns:
+        out["Source File"] = df["Source File"].values
 
     for col in ["Net Amount", "Invoice Amount", "Duty Amount", "Package Quantity", "Billed Weight", "Entered Weight"]:
         if col in out.columns:

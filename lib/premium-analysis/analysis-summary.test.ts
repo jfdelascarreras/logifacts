@@ -44,6 +44,11 @@ describe('parseInvoiceDateKey', () => {
     expect(parseInvoiceDateKey('06/30/2025 12:00:00 AM')).toBe('2025-06-30')
     expect(parseInvoiceDateKey('6/30/2025')).toBe('2025-06-30')
   })
+
+  it('parses FedEx compact YYYYMMDD', () => {
+    expect(parseInvoiceDateKey('20241127')).toBe('2024-11-27')
+    expect(parseInvoiceDateKey('20241118')).toBe('2024-11-18')
+  })
 })
 
 describe('modeFromZone + weightBucketFromLbs', () => {

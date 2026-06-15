@@ -20,12 +20,30 @@ function fmtShipments(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+/** Minimum visible tint for any non-zero value; scales up to ~50% mix at max. */
 function heatAlpha(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0
-  return 0.08 + 0.42 * (value / max)
+  const ratio = value / max
+  return 0.18 + 0.32 * Math.sqrt(ratio)
 }
 
 type CellData = { avgSpend: number; avgShipments: number }
+
+function heatBg(value: number, max: number, colorVar: string): string | undefined {
+  const alpha = heatAlpha(value, max)
+  if (alpha <= 0) return undefined
+  return `color-mix(in srgb, ${colorVar} ${Math.round(alpha * 100)}%, transparent)`
+}
+
+function EmptyMetricCells({ yearStart }: { yearStart: boolean }) {
+  const border = yearStart ? 'border-l-2 border-border' : ''
+  return (
+    <>
+      <td className={cn('px-2 py-2 text-center text-muted-foreground/40', border)}>—</td>
+      <td className="px-2 py-2 text-center text-muted-foreground/40">—</td>
+    </>
+  )
+}
 
 function DualMetricCells({
   cell,
@@ -33,50 +51,54 @@ function DualMetricCells({
   maxShip,
   spendColorVar,
   shipColorVar,
+  yearStart,
 }: {
   cell: CellData | undefined
   maxSpend: number
   maxShip: number
   spendColorVar: string
   shipColorVar: string
+  yearStart: boolean
 }) {
   if (!cell || (cell.avgSpend <= 0 && cell.avgShipments <= 0)) {
-    return (
-      <>
-        <td className="px-2 py-1.5" aria-hidden />
-        <td className="px-2 py-1.5" aria-hidden />
-      </>
-    )
+    return <EmptyMetricCells yearStart={yearStart} />
   }
 
-  const spendAlpha = heatAlpha(cell.avgSpend, maxSpend)
-  const shipAlpha = heatAlpha(cell.avgShipments, maxShip)
+  const spendBg = heatBg(cell.avgSpend, maxSpend, spendColorVar)
+  const shipBg = heatBg(cell.avgShipments, maxShip, shipColorVar)
 
   return (
     <>
       <td
-        className="px-2 py-1.5 text-center tabular-nums text-foreground"
-        style={{
-          backgroundColor:
-            spendAlpha > 0
-              ? `color-mix(in srgb, ${spendColorVar} ${Math.round(spendAlpha * 100)}%, transparent)`
-              : undefined,
-        }}
+        className={cn(
+          'px-2 py-2 text-center tabular-nums text-foreground',
+          yearStart && 'border-l-2 border-border'
+        )}
+        style={{ backgroundColor: spendBg }}
+        title={`Avg spend / active day: $${fmtMoney(cell.avgSpend)}`}
       >
         ${fmtMoney(cell.avgSpend)}
       </td>
       <td
-        className="px-2 py-1.5 text-center tabular-nums text-foreground"
-        style={{
-          backgroundColor:
-            shipAlpha > 0
-              ? `color-mix(in srgb, ${shipColorVar} ${Math.round(shipAlpha * 100)}%, transparent)`
-              : undefined,
-        }}
+        className="px-2 py-2 text-center tabular-nums text-foreground"
+        style={{ backgroundColor: shipBg }}
+        title={`Avg shipments / active day: ${fmtShipments(cell.avgShipments)}`}
       >
         {fmtShipments(cell.avgShipments)}
       </td>
     </>
+  )
+}
+
+function MatrixColGroup({ years }: { years: number[] }) {
+  return (
+    <colgroup>
+      <col style={{ width: '3.5rem' }} />
+      {years.flatMap((y) => [
+        <col key={`${y}-spend`} style={{ width: '4.75rem' }} />,
+        <col key={`${y}-ship`} style={{ width: '4.25rem' }} />,
+      ])}
+    </colgroup>
   )
 }
 
@@ -104,10 +126,56 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
     [matrix.byYearWeek]
   )
 
-  const monthsInData = useMemo(
-    () => [...new Set(matrix.byYearMonth.map((r) => r.month))].sort((a, b) => a - b),
+  const monthGrid = useMemo(() => {
+    const map = new Map<string, CellData>()
+    let maxSpend = 0
+    let maxShip = 0
+    for (const row of matrix.byYearMonth) {
+      const key = `${row.year}-${row.month}`
+      map.set(key, { avgSpend: row.avgSpend, avgShipments: row.avgShipments })
+      maxSpend = Math.max(maxSpend, row.avgSpend)
+      maxShip = Math.max(maxShip, row.avgShipments)
+    }
+    return { map, maxSpend, maxShip }
+  }, [matrix.byYearMonth])
+
+  const chronologicalMonths = useMemo(
+    () =>
+      [...matrix.byYearMonth]
+        .sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month))
+        .map((r) => ({
+          key: `${r.year}-${r.month}`,
+          label: `${MONTH_SHORT[r.month - 1]} '${String(r.year).slice(-2)}`,
+          cell: { avgSpend: r.avgSpend, avgShipments: r.avgShipments },
+        })),
     [matrix.byYearMonth]
   )
+
+  /** Pivoted year×month grid when enough months exist; otherwise chronological list. */
+  const useMonthPivot = useMemo(() => {
+    if (yearsForMonth.length <= 1) return true
+    const threshold = yearsForMonth.length * 8
+    return matrix.byYearMonth.length >= threshold
+  }, [matrix.byYearMonth.length, yearsForMonth.length])
+
+  const pivotMonthRows = useMemo(() => {
+    const monthsWithData = new Set(matrix.byYearMonth.map((r) => r.month))
+    return [...monthsWithData].sort((a, b) => a - b)
+  }, [matrix.byYearMonth])
+
+  const weekGrid = useMemo(() => {
+    const weeks = [...new Set(matrix.byYearWeek.map((r) => r.weekOfYear))].sort((a, b) => a - b)
+    const map = new Map<string, CellData>()
+    let maxSpend = 0
+    let maxShip = 0
+    for (const row of matrix.byYearWeek) {
+      const key = `${row.year}-${row.weekOfYear}`
+      map.set(key, { avgSpend: row.avgSpend, avgShipments: row.avgShipments })
+      maxSpend = Math.max(maxSpend, row.avgSpend)
+      maxShip = Math.max(maxShip, row.avgShipments)
+    }
+    return { weeks, map, maxSpend, maxShip }
+  }, [matrix.byYearWeek])
 
   async function exportExcel() {
     setExporting(true)
@@ -139,69 +207,48 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
     }
   }
 
-  const monthGrid = useMemo(() => {
-    const map = new Map<string, CellData>()
-    let maxSpend = 0
-    let maxShip = 0
-    for (const row of matrix.byYearMonth) {
-      const key = `${row.year}-${row.month}`
-      map.set(key, { avgSpend: row.avgSpend, avgShipments: row.avgShipments })
-      maxSpend = Math.max(maxSpend, row.avgSpend)
-      maxShip = Math.max(maxShip, row.avgShipments)
-    }
-    return { map, maxSpend, maxShip }
-  }, [matrix.byYearMonth])
-
-  const weekGrid = useMemo(() => {
-    const weeks = [...new Set(matrix.byYearWeek.map((r) => r.weekOfYear))].sort((a, b) => a - b)
-    const map = new Map<string, CellData>()
-    let maxSpend = 0
-    let maxShip = 0
-    for (const row of matrix.byYearWeek) {
-      const key = `${row.year}-${row.weekOfYear}`
-      map.set(key, { avgSpend: row.avgSpend, avgShipments: row.avgShipments })
-      maxSpend = Math.max(maxSpend, row.avgSpend)
-      maxShip = Math.max(maxShip, row.avgShipments)
-    }
-    return { weeks, map, maxSpend, maxShip }
-  }, [matrix.byYearWeek])
-
-  if (!byYearSorted.length && !monthsInData.length && !weekGrid.weeks.length) return null
+  if (!byYearSorted.length && !chronologicalMonths.length && !weekGrid.weeks.length) return null
 
   function yearGroupHeader(years: number[], periodLabel: 'Week' | 'Month') {
     if (!years.length) return null
     return (
       <>
-        <tr>
+        <tr className="border-b border-border bg-muted/40">
           <th
             rowSpan={2}
-            className="sticky left-0 z-10 bg-card px-2 py-2 text-left font-medium text-muted-foreground align-bottom"
+            className="sticky left-0 z-20 bg-muted/40 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground align-bottom shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
           >
             {periodLabel}
           </th>
-          {years.map((y) => (
+          {years.map((y, i) => (
             <th
               key={y}
               colSpan={2}
-              className="border-b border-border px-2 py-1.5 text-center text-xs font-semibold text-foreground"
+              className={cn(
+                'px-2 py-2 text-center text-xs font-semibold text-foreground',
+                i > 0 && 'border-l-2 border-border'
+              )}
             >
               {y}
             </th>
           ))}
         </tr>
-        <tr>
-          {years.flatMap((y) => [
+        <tr className="border-b border-border bg-muted/25">
+          {years.flatMap((y, i) => [
             <th
               key={`${y}-spend`}
-              className="px-2 py-1 text-center text-[10px] font-medium text-muted-foreground"
+              className={cn(
+                'px-2 py-1.5 text-center text-[10px] font-medium text-muted-foreground',
+                i > 0 && 'border-l-2 border-border'
+              )}
             >
-              Avg spend
+              Spend
             </th>,
             <th
               key={`${y}-ship`}
-              className="px-2 py-1 text-center text-[10px] font-medium text-muted-foreground"
+              className="px-2 py-1.5 text-center text-[10px] font-medium text-muted-foreground"
             >
-              Avg ship.
+              Shipments
             </th>,
           ])}
         </tr>
@@ -209,35 +256,47 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
     )
   }
 
-  function renderPeriodRow(
-    periodLabel: string,
-    periodKey: string,
-    years: number[],
-    map: Map<string, CellData>,
-    maxSpend: number,
-    maxShip: number
-  ) {
-    const hasData = years.some((y) => {
-      const cell = map.get(`${y}-${periodKey}`)
-      return cell && (cell.avgSpend > 0 || cell.avgShipments > 0)
-    })
-    if (!hasData) return null
-
+  function renderPivotMonthRow(month: number) {
     return (
-      <tr key={periodKey} className="border-t border-border/50">
-        <td className="sticky left-0 z-10 bg-card px-2 py-1.5 font-medium text-foreground">
-          {periodLabel}
+      <tr key={month} className="border-b border-border/60 hover:bg-muted/20">
+        <td className="sticky left-0 z-10 bg-card px-2 py-2 text-xs font-medium text-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+          {MONTH_SHORT[month - 1]}
         </td>
-        {years.flatMap((y) => {
-          const cell = map.get(`${y}-${periodKey}`)
+        {yearsForMonth.flatMap((y, yearIndex) => {
+          const cell = monthGrid.map.get(`${y}-${month}`)
           return (
             <DualMetricCells
-              key={`${y}-${periodKey}`}
+              key={`${y}-${month}`}
               cell={cell}
-              maxSpend={maxSpend}
-              maxShip={maxShip}
+              maxSpend={monthGrid.maxSpend}
+              maxShip={monthGrid.maxShip}
               spendColorVar="var(--chart-1)"
               shipColorVar="var(--chart-2)"
+              yearStart={yearIndex > 0}
+            />
+          )
+        })}
+      </tr>
+    )
+  }
+
+  function renderWeekRow(week: number) {
+    return (
+      <tr key={week} className="border-b border-border/60 hover:bg-muted/20">
+        <td className="sticky left-0 z-10 bg-card px-2 py-2 text-xs font-medium tabular-nums text-foreground shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+          W{String(week).padStart(2, '0')}
+        </td>
+        {yearsForWeek.flatMap((y, yearIndex) => {
+          const cell = weekGrid.map.get(`${y}-${week}`)
+          return (
+            <DualMetricCells
+              key={`${y}-${week}`}
+              cell={cell}
+              maxSpend={weekGrid.maxSpend}
+              maxShip={weekGrid.maxShip}
+              spendColorVar="var(--chart-1)"
+              shipColorVar="var(--chart-2)"
+              yearStart={yearIndex > 0}
             />
           )
         })}
@@ -299,19 +358,24 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
             </button>
           ))}
           {view !== 'year' ? (
-            <span className="text-xs text-muted-foreground">
-              <span className="inline-block size-2 rounded-sm bg-[var(--chart-1)] opacity-60 align-middle" /> Spend
-              <span className="mx-2" />
-              <span className="inline-block size-2 rounded-sm bg-[var(--chart-2)] opacity-60 align-middle" /> Shipments
+            <span className="ml-1 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-sm bg-[var(--chart-1)] opacity-70" />
+                Spend
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-sm bg-[var(--chart-2)] opacity-70" />
+                Shipments
+              </span>
             </span>
           ) : null}
         </div>
       </CardHeader>
       <CardContent>
         {view === 'year' ? (
-          <div className="overflow-x-auto rounded-md" tabIndex={0} role="region" aria-label="Year averages table">
+          <div className="overflow-x-auto rounded-md border border-border" tabIndex={0} role="region" aria-label="Year averages table">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="text-muted-foreground">
+              <thead className="bg-muted/30 text-muted-foreground">
                 <tr className="border-b border-border">
                   <th className="px-3 py-2 font-medium">Year</th>
                   <th className="px-3 py-2 font-medium text-right">Total spend</th>
@@ -325,7 +389,7 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
               </thead>
               <tbody>
                 {byYearSorted.map((row) => (
-                  <tr key={row.year} className="border-b border-border">
+                  <tr key={row.year} className="border-b border-border/60 hover:bg-muted/20">
                     <td className="px-3 py-2 font-medium">{row.year}</td>
                     <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.totalSpend)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.avgSpend)}</td>
@@ -341,60 +405,98 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
           </div>
         ) : null}
 
-        {view === 'month' && monthsInData.length > 0 ? (
+        {view === 'month' && chronologicalMonths.length > 0 ? (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Only months and years with invoice data — avg spend and avg shipments per active day
+              {useMonthPivot
+                ? 'Calendar months by year — avg spend and avg shipments per active day. Empty cells had no invoice activity.'
+                : 'Chronological months with invoice data — avg spend and avg shipments per active day.'}
             </p>
-            <div className="overflow-x-auto rounded-md" tabIndex={0} role="region" aria-label="Month year matrix">
-              <table className="w-full min-w-[480px] border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-card">
-                  {yearGroupHeader(yearsForMonth, 'Month')}
-                </thead>
-                <tbody>
-                  {monthsInData.map((month) =>
-                    renderPeriodRow(
-                      MONTH_SHORT[month - 1]!,
-                      String(month),
-                      yearsForMonth,
-                      monthGrid.map,
-                      monthGrid.maxSpend,
-                      monthGrid.maxShip
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {useMonthPivot ? (
+              <div
+                className="overflow-x-auto rounded-md border border-border"
+                tabIndex={0}
+                role="region"
+                aria-label="Month year matrix"
+              >
+                <table className="w-full table-fixed border-collapse text-xs">
+                  <MatrixColGroup years={yearsForMonth} />
+                  <thead className="sticky top-0 z-10">{yearGroupHeader(yearsForMonth, 'Month')}</thead>
+                  <tbody>
+                    {pivotMonthRows.map((month) => renderPivotMonthRow(month))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div
+                className="overflow-x-auto rounded-md border border-border"
+                tabIndex={0}
+                role="region"
+                aria-label="Chronological month averages"
+              >
+                <table className="w-full max-w-md table-fixed border-collapse text-xs">
+                  <colgroup>
+                    <col style={{ width: '5rem' }} />
+                    <col style={{ width: '5.5rem' }} />
+                    <col style={{ width: '5rem' }} />
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40">
+                      <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Period
+                      </th>
+                      <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Avg spend / day
+                      </th>
+                      <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Avg ship. / day
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chronologicalMonths.map((row) => (
+                      <tr key={row.key} className="border-b border-border/60 hover:bg-muted/20">
+                        <td className="px-3 py-2 font-medium text-foreground">{row.label}</td>
+                        <td
+                          className="px-3 py-2 text-center tabular-nums"
+                          style={{ backgroundColor: heatBg(row.cell.avgSpend, monthGrid.maxSpend, 'var(--chart-1)') }}
+                        >
+                          ${fmtMoney(row.cell.avgSpend)}
+                        </td>
+                        <td
+                          className="px-3 py-2 text-center tabular-nums"
+                          style={{
+                            backgroundColor: heatBg(row.cell.avgShipments, monthGrid.maxShip, 'var(--chart-2)'),
+                          }}
+                        >
+                          {fmtShipments(row.cell.avgShipments)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         ) : null}
 
         {view === 'week' && weekGrid.weeks.length > 0 ? (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Only ISO weeks and years with invoice data — avg spend and avg shipments per active day
+              ISO weeks by year — avg spend and avg shipments per active day. Empty cells had no invoice activity.
             </p>
             <div
-              className="max-h-[min(28rem,50vh)] overflow-auto rounded-md"
+              className="max-h-[min(28rem,50vh)] overflow-auto rounded-md border border-border"
               tabIndex={0}
               role="region"
               aria-label="Week of year matrix"
             >
-              <table className="w-full min-w-[480px] border-collapse text-xs">
+              <table className="w-full table-fixed border-collapse text-xs">
+                <MatrixColGroup years={yearsForWeek} />
                 <thead className="sticky top-0 z-10 bg-card shadow-sm">
                   {yearGroupHeader(yearsForWeek, 'Week')}
                 </thead>
-                <tbody>
-                  {weekGrid.weeks.map((week) =>
-                    renderPeriodRow(
-                      `W${String(week).padStart(2, '0')}`,
-                      String(week),
-                      yearsForWeek,
-                      weekGrid.map,
-                      weekGrid.maxSpend,
-                      weekGrid.maxShip
-                    )
-                  )}
-                </tbody>
+                <tbody>{weekGrid.weeks.map((week) => renderWeekRow(week))}</tbody>
               </table>
             </div>
           </div>

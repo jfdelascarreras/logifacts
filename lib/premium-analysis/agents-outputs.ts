@@ -11,6 +11,10 @@ import { detectAnomalies, buildDatasetFlags } from '@/lib/premium-analysis/anoma
 import { prioritizeActions } from '@/lib/premium-analysis/action-prioritization'
 import { buildCarrierMix } from '@/lib/premium-analysis/carrier-mix'
 import {
+  buildShipmentFacts,
+  shipmentWeightGapLbs,
+} from '@/lib/premium-analysis/shipment-fact'
+import {
   detectContractDiscountShortfalls,
   type ContractDiscounts,
 } from '@/lib/premium-analysis/contract-compliance'
@@ -25,6 +29,7 @@ export function enrichSummaryWithAgentsOutputs(
   user?: User | null
 ): InvoiceAnalysisSummary & AgentsAnalysisExtensions {
   const mappingLookup = buildChargeDescriptionLookup(mappingRows)
+  const shipmentFacts = buildShipmentFacts(records, mappingLookup, mappingRows)
   const specCategories = rollupByAgentsCategory(records, mappingLookup, mappingRows)
   const baseFreight = specCategories.categories.find((c) => c.category === 'BASE_FREIGHT')?.totalCost ?? 0
 
@@ -32,6 +37,7 @@ export function enrichSummaryWithAgentsOutputs(
     ...summary.measures,
     baseFreightCost: baseFreight,
     accessorialRate: baseFreight > 0 ? (summary.measures.costAccessorials ?? 0) / baseFreight : 0,
+    weightGap: shipmentWeightGapLbs(shipmentFacts),
   }
 
   const shipmentCountsByCarrier = countShipmentsByDimension(records, 'carrier')
@@ -58,19 +64,23 @@ export function enrichSummaryWithAgentsOutputs(
   }
 
   const datasetFlags = buildDatasetFlags(enrichedBase, records, mappingLookup, mappingRows)
-  let anomalyFlags = detectAnomalies(records, enrichedBase, mappingLookup, mappingRows)
+  let anomalyFlags = detectAnomalies(records, enrichedBase, mappingLookup, mappingRows, shipmentFacts)
 
   const contractDiscounts = (user?.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
   const contractFlags = detectContractDiscountShortfalls(records, contractDiscounts)
   anomalyFlags = [...anomalyFlags, ...contractFlags].sort((a, b) => b.amount - a.amount)
 
-  const savingsEstimate = estimateSavings(anomalyFlags, summary.monthlySpend)
+  const savingsEstimate = estimateSavings(
+    anomalyFlags,
+    summary.monthlySpend,
+    summary.measures.totalCost
+  )
   const actionItems = prioritizeActions(savingsEstimate)
 
   return {
     ...enrichedBase,
     specCategories,
-    carrierMix: buildCarrierMix(records),
+    carrierMix: buildCarrierMix(shipmentFacts),
     anomalyFlags,
     savingsEstimate,
     actionItems,
