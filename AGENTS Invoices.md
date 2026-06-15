@@ -35,7 +35,7 @@ flowchart LR
 | Read path | `loadPremiumIngestRecords()` | Default: **`invoice_rows`** (`PREMIUM_INGEST_SOURCE=invoice_rows`) |
 | Dashboard | `app/components/analysis/premium-dashboard.tsx` | KPIs, charts, `AgentsFindingsPanel`, data health |
 
-Deep technical reference: [`docs/INGEST_ANALYSIS_ROADMAP.md`](./docs/INGEST_ANALYSIS_ROADMAP.md), [`docs/PREMIUM_ANALYSIS_CALCULATION.md`](./docs/PREMIUM_ANALYSIS_CALCULATION.md).
+Deep technical reference: [`docs/INGEST_ANALYSIS_ROADMAP.md`](./docs/INGEST_ANALYSIS_ROADMAP.md), [`docs/PREMIUM_ANALYSIS_CALCULATION.md`](./docs/PREMIUM_ANALYSIS_CALCULATION.md), [`docs/MAPPING_TAXONOMY_TREE.md`](./docs/MAPPING_TAXONOMY_TREE.md) (category 1–5 explanation tree).
 
 ---
 
@@ -82,6 +82,15 @@ Legacy KPI cards use **taxonomy Category 3** and UPS classification — overlapp
 | **`costAccessorials`** | UPS `Charge Classification Code === 'ACC'` (excl. INF/ICC), **or** `category_1 === 'ACCESSORIAL SURCHARGE'` with category_3 not in surcharge set |
 
 **Important:** Fuel is a **subset** of surcharges. On FedEx-heavy datasets where only fuel lines map to `FUEL SURCHARGE` at category_3, **`fuelCost` and `costSurcharges` will match**. Accessorial spend (e.g. residential, DAS) often appears only under **`costAccessorials`** or unmapped lines.
+
+**MoM waterfall** (`mom-waterfall.tsx`): must **not** sum Fuel + full Surcharges as separate bridge steps (that double-counts fuel). Use the mutually exclusive partition in `buildMomWaterfallSegments()`:
+
+| Waterfall step | Amount |
+|----------------|--------|
+| Base Freight | `totalCost − costSurcharges − costAccessorials` |
+| Fuel | `costFuel` |
+| Other surcharges | `max(0, costSurcharges − costFuel)` |
+| Accessorials | `costAccessorials` |
 
 **Money field:** Always **`Net Amount`** (after discounts), never gross invoice amount.
 

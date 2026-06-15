@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { buildMomWaterfallSegments } from '@/lib/premium-analysis/mom-waterfall-segments'
 
 type MonthRow = {
   month: string
@@ -57,15 +58,7 @@ export function MomWaterfall({ monthlySpend }: Props) {
     const current = monthlySpend[safeCurrentIdx]!
     const previous = monthlySpend[safePrevIdx]!
 
-    const bfC = current.totalCost - (current.costFuel ?? 0) - (current.costAccessorials ?? 0) - (current.costSurcharges ?? 0)
-    const bfP = previous.totalCost - (previous.costFuel ?? 0) - (previous.costAccessorials ?? 0) - (previous.costSurcharges ?? 0)
-
-    const segments = [
-      { label: 'Base Freight', delta: bfC - bfP, base: bfP },
-      { label: 'Fuel', delta: (current.costFuel ?? 0) - (previous.costFuel ?? 0), base: previous.costFuel ?? 0 },
-      { label: 'Surcharges', delta: (current.costSurcharges ?? 0) - (previous.costSurcharges ?? 0), base: previous.costSurcharges ?? 0 },
-      { label: 'Accessorials', delta: (current.costAccessorials ?? 0) - (previous.costAccessorials ?? 0), base: previous.costAccessorials ?? 0 },
-    ]
+    const segments = buildMomWaterfallSegments(current, previous)
 
     let running = 0
     const bars = segments.map(s => {
@@ -117,6 +110,7 @@ export function MomWaterfall({ monthlySpend }: Props) {
 
   const descLine = [
     `${currentMonth} vs ${previousMonth}`,
+    'Fuel is counted under surcharges in KPIs; waterfall shows fuel separately and other surcharges excl. fuel.',
     Math.abs(totalDelta) > 0
       ? `Biggest driver: ${biggestBar.label} (${biggestSign}${fmtAmt(Math.abs(biggestBar.delta))}${biggestPct ? `, ${biggestPct}` : ''})`
       : null,

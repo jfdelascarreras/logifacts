@@ -1350,13 +1350,13 @@ export function PremiumDashboard() {
 
         <AgentsFindingsPanel summary={summary} />
 
-        {summary?.category2VolumeCpp?.length &&
-        summary?.modeVolumeCpp?.length &&
-        summary?.weightBucketVolume?.length ? (
+        {(summary?.category2VolumeCpp?.length ||
+          summary?.modeVolumeCpp?.length ||
+          summary?.weightBucketVolume?.length) ? (
           <CreativeVisualsGrid
-            category2VolumeCpp={summary.category2VolumeCpp}
-            modeVolumeCpp={summary.modeVolumeCpp}
-            weightBucketVolume={summary.weightBucketVolume}
+            category2VolumeCpp={summary.category2VolumeCpp ?? []}
+            modeVolumeCpp={summary.modeVolumeCpp ?? []}
+            weightBucketVolume={summary.weightBucketVolume ?? []}
           />
         ) : null}
 
