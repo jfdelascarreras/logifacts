@@ -1,4 +1,5 @@
 [
+  {"effectiveDate": "2026-06-15", "domesticGround": 0.275, "domesticAir": 0.3125, "intlAirExport": 0.415, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775},
   {"effectiveDate": "2026-06-08", "domesticGround": 0.275, "domesticAir": 0.3125, "intlAirExport": 0.415, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775},
   {"effectiveDate": "2026-06-01", "domesticGround": 0.275, "domesticAir": 0.3125, "intlAirExport": 0.415, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775},
   {"effectiveDate": "2026-05-25", "domesticGround": 0.275, "domesticAir": 0.3125, "intlAirExport": 0.415, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775},
