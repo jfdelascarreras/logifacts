@@ -1,11 +1,15 @@
 'use client'
 
-import { ExternalLink, Package, Route, Truck, Video } from 'lucide-react'
+import { ExternalLink, CalendarClock, Package, Route, Truck, Video } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
 
-import { MASTERMIND_TEAMS_JOIN_URL } from '@/lib/mastermind/constants'
+import {
+  MASTERMIND_SESSION_WHEN,
+  MASTERMIND_SESSION_WHEN_LONG,
+  MASTERMIND_TEAMS_JOIN_URL,
+} from '@/lib/mastermind/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -98,8 +102,8 @@ export function MastermindSection({
               />
             </div>
             <div className="absolute left-0 top-6 z-20 rounded-2xl bg-background/90 px-3 py-2 shadow-sm backdrop-blur-sm">
-              <p className="font-heading text-xs font-semibold uppercase tracking-[0.18em] text-accent">Live freight session</p>
-              <p className="text-sm font-medium text-foreground">Operator roundtable</p>
+              <p className="font-heading text-xs font-semibold uppercase tracking-[0.18em] text-accent">First session</p>
+              <p className="text-sm font-medium text-foreground">{MASTERMIND_SESSION_WHEN}</p>
             </div>
             <div className="absolute bottom-4 right-0 z-20 max-w-[12rem] rounded-2xl bg-[color-mix(in_srgb,var(--chart-1)_92%,transparent)] px-3 py-2 text-white shadow-md">
               <p className="text-xs leading-snug opacity-90">Operators · TMs · Freight audit</p>
@@ -119,6 +123,21 @@ export function MastermindSection({
             >
               Join our upcoming Mastermind — built for operators who live freight every day
             </h2>
+            <div
+              className="flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3"
+              role="note"
+              aria-label={`Session date and time: ${MASTERMIND_SESSION_WHEN_LONG}`}
+            >
+              <CalendarClock className="mt-0.5 size-5 shrink-0 text-accent" aria-hidden />
+              <div className="space-y-1">
+                <p className="font-heading text-sm font-semibold tracking-wide text-foreground">
+                  {MASTERMIND_SESSION_WHEN}
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {MASTERMIND_SESSION_WHEN_LONG}
+                </p>
+              </div>
+            </div>
             <p className="max-w-xl text-pretty text-sm leading-7 text-muted-foreground sm:text-base">
               Parcel invoices, accessorials, zone gaps, rate cards — the work is rarely simple, and
               rarely solo. This is a live session with transportation managers, freight analysts, and
@@ -147,12 +166,12 @@ export function MastermindSection({
                 </h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {wasAlreadyRegistered
-                    ? "Your registration is updated. We'll see you when the operator roundtable goes live."
-                    : 'Your seat at the roundtable is saved. When the session opens, you belong in this freight conversation.'}
+                    ? `Your registration is updated. We'll see you ${MASTERMIND_SESSION_WHEN}.`
+                    : `Your seat is saved for ${MASTERMIND_SESSION_WHEN}. When we go live, you belong in this freight conversation.`}
                 </p>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Save the Teams link below — one click at go-live and you&apos;re on the call with fellow shippers and operators.
+                Save the Teams link below — one click at 12:00 PM EST on June 25 and you&apos;re on the call with fellow shippers and operators.
               </p>
               <Button
                 type="button"
@@ -182,7 +201,7 @@ export function MastermindSection({
           ) : (
             <div className="border-t border-border/60 pt-6">
               <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
-                Tell us your name and shipper — we&apos;ll welcome you by name when the roundtable opens.
+                Tell us your name and shipper — we&apos;ll welcome you by name on {MASTERMIND_SESSION_WHEN}.
               </p>
               <form onSubmit={handleSubmit} noValidate aria-busy={isLoading} className="space-y-5">
                 <div className="grid gap-5 sm:grid-cols-2">

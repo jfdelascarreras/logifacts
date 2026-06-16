@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { MASTERMIND_EVENT_SLUG, MASTERMIND_TEAMS_JOIN_URL } from '@/lib/mastermind/constants'
+import {
+  MASTERMIND_EVENT_SLUG,
+  MASTERMIND_SESSION_WHEN,
+  MASTERMIND_TEAMS_JOIN_URL,
+} from '@/lib/mastermind/constants'
 
 describe('mastermind constants', () => {
   it('uses a stable event slug', () => {
@@ -9,5 +13,9 @@ describe('mastermind constants', () => {
 
   it('provides a Teams join URL', () => {
     expect(MASTERMIND_TEAMS_JOIN_URL).toMatch(/^https:\/\/teams\.microsoft\.com\//)
+  })
+
+  it('schedules the first session for June 25 at noon Eastern', () => {
+    expect(MASTERMIND_SESSION_WHEN).toBe('Thursday, June 25 · 12:00 PM EST')
   })
 })
