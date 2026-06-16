@@ -1,13 +1,5 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -16,6 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { paper, paperTableCell, paperTableHeadCell } from '@/app/components/analysis/premium-paper-styles'
+import { cn } from '@/lib/utils'
 import type {
   ActionItem,
   AnomalyFlag,
@@ -59,18 +53,22 @@ export function AgentsFindingsPanel({ summary }: Props) {
   return (
     <div className="space-y-4">
       {dataset?.wwePresent && dataset.wweFuelEmbedded ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
-          WWE/WWEX data present: fuel surcharge is embedded in base rates and cannot be verified as a separate line item.
+        <p className={cn(paper.alert, 'text-xs')}>
+          Note: WWE/WWEX fuel surcharge is embedded in base rates and is not verified as a separate line item.
         </p>
       ) : null}
 
       {spec ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Cost structure</CardTitle>
-            <CardDescription>Spend by standardized category with share of total net spend.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <section className={paper.section}>
+          <header className={paper.sectionHeader}>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Table 5.</span>
+              Cost structure
+            </h2>
+            <p className={paper.sectionDesc}>Standardized categories as a share of total net spend.</p>
+          </header>
+          <div className={paper.sectionBody}>
+            <div className={paper.tableWrap}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -91,20 +89,24 @@ export function AgentsFindingsPanel({ summary }: Props) {
             </Table>
             {dataset?.accessorialRateHigh ? (
               <p className="mt-3 text-xs text-destructive">
-                Accessorial rate {fmtPct(dataset.accessorialRate)} exceeds 10% benchmark (normal 5–8%).
+                Accessorial rate {fmtPct(dataset.accessorialRate)} exceeds the 10% benchmark (typical range 5–8%).
               </p>
             ) : null}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {summary.carrierMix?.length ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Carrier mix</CardTitle>
-            <CardDescription>Shipments and average cost by service and zone mode.</CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
+        <section className={paper.section}>
+          <header className={paper.sectionHeader}>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Table 6.</span>
+              Carrier mix
+            </h2>
+            <p className={paper.sectionDesc}>Shipments and average cost by service and zone mode.</p>
+          </header>
+          <div className={cn(paper.sectionBody, paper.tableWrap, 'overflow-x-auto')}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -131,91 +133,99 @@ export function AgentsFindingsPanel({ summary }: Props) {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
 
       {ingestQuality?.blockSavings ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-          Savings estimates are hidden: {ingestQuality.reason}
+        <p className={cn(paper.alert, 'text-xs')}>
+          Savings estimates suppressed: {ingestQuality.reason}
         </p>
       ) : null}
 
       {savings ? (
-        <Card className="overflow-hidden border-emerald-300/60 bg-gradient-to-br from-emerald-50/90 via-card to-card dark:from-emerald-950/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-emerald-900 dark:text-emerald-100">
-              Annualized savings opportunity
-            </CardTitle>
-            <CardDescription>
-              Based on {savings.annualizedBasisMonths} month(s) in your invoices — recoverable spend if you act on the
-              findings below.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <p className="text-3xl font-bold tracking-tight text-emerald-700 dark:text-emerald-300">
-                {fmtUSD(savings.low)} – {fmtUSD(savings.high)}
-              </p>
-              <span className="text-sm font-medium text-emerald-800/80 dark:text-emerald-200/80">per year</span>
-            </div>
-            <p className="max-w-prose text-sm leading-relaxed text-emerald-900/90 dark:text-emerald-100/90">
-              You could recover up to{' '}
-              <span className="font-semibold text-emerald-700 dark:text-emerald-300">{fmtUSD(savings.high)}</span>{' '}
-              annually by addressing the prioritized actions — starting with the top items marked below.
+        <section className={paper.section}>
+          <header className={paper.sectionHeader}>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>§2</span>
+              Annualized savings estimate
+            </h2>
+            <p className={paper.sectionDesc}>
+              Point estimate based on {savings.annualizedBasisMonths} month(s) in the invoice sample.
+            </p>
+          </header>
+          <div className={paper.sectionBody}>
+            <p className="text-2xl font-medium tabular-nums text-foreground">
+              {fmtUSD(savings.low)} – {fmtUSD(savings.high)}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">per year</span>
+            </p>
+            <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
+              Upper bound recoverable spend if prioritized actions below are implemented.
             </p>
             {actions[0] ? (
-              <div className="rounded-lg border border-emerald-200/80 bg-white/70 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
-                <span className="font-semibold">Quick win:</span> #{actions[0].rank} {actions[0].category} — up to{' '}
-                {fmtUSD(actions[0].annualSavingsHigh)}/yr
-              </div>
+              <p className={cn(paper.alert, 'mt-3 text-xs')}>
+                Leading action: #{actions[0].rank} {actions[0].category} — up to{' '}
+                {fmtUSD(actions[0].annualSavingsHigh)}/yr.
+              </p>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
 
       {actions.length && !ingestQuality?.blockSavings ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Prioritized actions</CardTitle>
-            <CardDescription>Top items ranked by savings impact and effort.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {actions.slice(0, 8).map((a) => (
-              <div
-                key={a.rank}
-                className={
-                  a.executable
-                    ? 'rounded-md border border-emerald-300/70 bg-emerald-50/60 p-3 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30'
-                    : 'rounded-md border p-3'
-                }
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-foreground">#{a.rank} {a.category}</span>
-                  {a.executable ? (
-                    <Badge className="border-emerald-400 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100">
-                      Start here
-                    </Badge>
-                  ) : null}
-                  <Badge variant="secondary">{a.effort} effort</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {fmtUSD(a.annualSavingsLow)} – {fmtUSD(a.annualSavingsHigh)} / yr
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{a.instructions}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <section className={paper.section}>
+          <header className={paper.sectionHeader}>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Table 7.</span>
+              Prioritized actions
+            </h2>
+            <p className={paper.sectionDesc}>Ranked by estimated savings and implementation effort.</p>
+          </header>
+          <div className={paper.sectionBody}>
+            <div className={paper.tableWrap}>
+            <table className={paper.table}>
+              <thead className={paper.tableHead}>
+                <tr>
+                  <th className={paperTableHeadCell()}>Rank</th>
+                  <th className={paperTableHeadCell()}>Category</th>
+                  <th className={paperTableHeadCell()}>Effort</th>
+                  <th className={paperTableHeadCell(true)}>Annual savings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actions.slice(0, 8).map((a) => (
+                  <tr key={a.rank}>
+                    <td className={paperTableCell()}>#{a.rank}</td>
+                    <td className={paperTableCell(false, true)}>
+                      {a.category}
+                      {a.executable ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">(recommended first)</span>
+                      ) : null}
+                      <p className="mt-1 text-xs font-normal text-muted-foreground">{a.instructions}</p>
+                    </td>
+                    <td className={paperTableCell()}>{a.effort}</td>
+                    <td className={paperTableCell(true)}>
+                      {fmtUSD(a.annualSavingsLow)} – {fmtUSD(a.annualSavingsHigh)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {flags.length ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Anomaly flags</CardTitle>
-            <CardDescription>{flags.length} item(s) flagged against AGENTS universal checks.</CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
+        <section className={paper.section}>
+          <header className={paper.sectionHeader}>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Table 8.</span>
+              Anomaly flags
+            </h2>
+            <p className={paper.sectionDesc}>{flags.length} observation(s) from universal AGENTS checks.</p>
+          </header>
+          <div className={cn(paper.sectionBody, paper.tableWrap, 'overflow-x-auto')}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -236,8 +246,8 @@ export function AgentsFindingsPanel({ summary }: Props) {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
     </div>
   )

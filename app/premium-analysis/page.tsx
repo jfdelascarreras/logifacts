@@ -21,7 +21,7 @@ export default async function PremiumAnalysisPage() {
       title="Premium Analysis"
       subtitle={`Signed in as ${user.email ?? 'your account'}`}
     >
-      <div className="space-y-8 rounded-2xl bg-muted/40 p-6">
+      <div className="space-y-10 border border-border bg-background p-6 sm:p-8">
         <section
           id="premium-invoice-upload"
           className="scroll-mt-24 bg-background pb-2"

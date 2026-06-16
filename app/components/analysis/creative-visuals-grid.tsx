@@ -1,7 +1,6 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { paper } from '@/app/components/analysis/premium-paper-styles'
 import { cn } from '@/lib/utils'
 
 type CppRow = {
@@ -74,13 +73,11 @@ function MetricBar({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="w-8 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <div className="relative h-3.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/50">
+      <span className="w-8 shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <div className={paper.barTrack}>
         <div
-          className="h-full rounded-full transition-[width] duration-300"
-          style={{ width: `${pct}%`, backgroundColor: color, opacity: 0.9 }}
+          className={paper.barFill}
+          style={{ width: `${pct}%`, backgroundColor: color }}
         />
       </div>
       <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-foreground">{formatted}</span>
@@ -89,12 +86,14 @@ function MetricBar({
 }
 
 function CppVolumePanel({
+  figureLabel,
   title,
   description,
   points,
   volumeColor,
   cppColor,
 }: {
+  figureLabel: string
   title: string
   description: string
   points: CppRow[]
@@ -106,37 +105,31 @@ function CppVolumePanel({
 
   const maxVol = Math.max(1, ...top.map((p) => p.totalVolume))
   const maxCpp = Math.max(0.01, ...top.map((p) => p.totalCpp))
-  const highestCpp = top.reduce((best, p) => (p.totalCpp > best.totalCpp ? p : best), top[0]!)
 
   return (
-    <Card className="border-border bg-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+    <section className={paper.section}>
+      <header className={paper.sectionHeader}>
+        <h3 className={paper.sectionTitle}>
+          <span className={paper.sectionNumber}>{figureLabel}</span>
+          {title}
+        </h3>
+        <p className={paper.sectionDesc}>{description}</p>
+      </header>
+      <div className={paper.sectionBody}>
+        <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1 border-b border-border pb-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-3 rounded-sm" style={{ backgroundColor: volumeColor }} />
+            <span className="inline-block h-2.5 w-3" style={{ backgroundColor: volumeColor }} />
             Package volume
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-3 rounded-sm" style={{ backgroundColor: cppColor }} />
-            CPP (cost per package)
+            <span className="inline-block h-2.5 w-3" style={{ backgroundColor: cppColor }} />
+            Cost per package (CPP)
           </span>
         </div>
 
-        <div className="space-y-5">
-          {top.map((point) => {
-            const isHighCpp = point.label === highestCpp.label && point.totalCpp > 0
-            return (
-              <div
-                key={point.label}
-                className={cn(
-                  'rounded-lg border border-transparent px-1 py-0.5',
-                  isHighCpp && 'border-amber-200/80 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20'
-                )}
-              >
+        <div className="space-y-4">
+          {top.map((point) => (
+              <div key={point.label} className="border-b border-border/60 pb-4 last:border-b-0 last:pb-0">
                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-medium text-foreground" title={point.label}>
@@ -144,17 +137,9 @@ function CppVolumePanel({
                     </p>
                     <p className="text-xs text-muted-foreground">{fmtCost(point.totalCost)} total spend</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                    <Badge variant="secondary" className="tabular-nums">
-                      {fmtVolume(point.totalVolume)} pkgs
-                    </Badge>
-                    <Badge
-                      variant={isHighCpp ? 'destructive' : 'outline'}
-                      className="tabular-nums"
-                      title="Cost per package"
-                    >
-                      {fmtCpp(point.totalCpp)}/pkg
-                    </Badge>
+                  <div className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                    <div>{fmtVolume(point.totalVolume)} pkgs</div>
+                    <div className="font-medium text-foreground">{fmtCpp(point.totalCpp)}/pkg</div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -174,11 +159,10 @@ function CppVolumePanel({
                   />
                 </div>
               </div>
-            )
-          })}
+            ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }
 
@@ -189,59 +173,62 @@ function WeightBucketPanel({ points }: { points: WeightBucketRow[] }) {
   const maxCpp = Math.max(0.01, ...points.map((p) => p.totalCpp))
 
   return (
-    <Card className="border-border bg-card lg:col-span-2">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Volume &amp; CPP by weight bucket</CardTitle>
-        <CardDescription>
-          Package volume (bars) and cost per package by billed weight tier. CPP bars use an independent scale.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+    <section className={cn(paper.section, 'lg:col-span-2')}>
+      <header className={paper.sectionHeader}>
+        <h3 className={paper.sectionTitle}>
+          <span className={paper.sectionNumber}>Figure 3.</span>
+          Volume and CPP by weight bucket
+        </h3>
+        <p className={paper.sectionDesc}>
+          Adjacent bars show package volume and cost per package by billed weight tier; CPP scale is independent.
+        </p>
+      </header>
+      <div className={paper.sectionBody}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {points.map((point) => {
             const volPct = Math.max(point.totalVolume > 0 ? 8 : 0, (point.totalVolume / maxVol) * 100)
             const cppPct = Math.max(point.totalCpp > 0 ? 8 : 0, (point.totalCpp / maxCpp) * 100)
             return (
               <div
                 key={point.weightBucket}
-                className="flex flex-col items-center gap-2 rounded-lg border border-border bg-muted/10 p-2.5"
+                className="flex flex-col items-center gap-2 border border-border bg-background p-2"
               >
-                <p className="text-center text-xs font-semibold text-foreground">{point.weightBucket}</p>
-                <div className="flex w-full max-w-[4.5rem] items-end justify-center gap-1.5">
-                  <div className="flex h-28 flex-1 flex-col justify-end rounded-md bg-muted/40 p-1" title="Volume">
+                <p className="text-center text-xs font-medium text-foreground">{point.weightBucket}</p>
+                <div className="flex w-full max-w-[4.5rem] items-end justify-center gap-1">
+                  <div className="flex h-28 flex-1 flex-col justify-end border border-border/60 bg-muted/20 p-0.5" title="Volume">
                     <div
-                      className="w-full rounded-sm transition-[height] duration-300"
-                      style={{ height: `${volPct}%`, backgroundColor: 'var(--chart-1)', opacity: 0.9 }}
+                      className="w-full transition-[height] duration-300 motion-reduce:transition-none"
+                      style={{ height: `${volPct}%`, backgroundColor: 'var(--chart-1)' }}
                     />
                   </div>
-                  <div className="flex h-28 flex-1 flex-col justify-end rounded-md bg-muted/40 p-1" title="CPP">
+                  <div className="flex h-28 flex-1 flex-col justify-end border border-border/60 bg-muted/20 p-0.5" title="CPP">
                     <div
-                      className="w-full rounded-sm transition-[height] duration-300"
-                      style={{ height: `${cppPct}%`, backgroundColor: 'var(--chart-2)', opacity: 0.9 }}
+                      className="w-full transition-[height] duration-300 motion-reduce:transition-none"
+                      style={{ height: `${cppPct}%`, backgroundColor: 'var(--chart-2)' }}
                     />
                   </div>
                 </div>
                 <div className="w-full space-y-0.5 text-center">
                   <p className="text-[10px] tabular-nums text-muted-foreground">{fmtK(point.totalVolume)} pkgs</p>
-                  <p className="text-sm font-semibold tabular-nums text-foreground">{fmtCpp(point.totalCpp)}</p>
-                  <p className="text-[10px] text-muted-foreground">CPP</p>
+                  <p className="text-sm font-medium tabular-nums text-foreground">{fmtCpp(point.totalCpp)}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">CPP</p>
                 </div>
               </div>
             )
           })}
         </div>
-        <div className="mt-3 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-3 rounded-sm bg-[var(--chart-1)]" />
+        <p className={cn(paper.figureNote, 'mt-3 text-center not-italic')}>
+          <span className="mr-4 inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-3 bg-[var(--chart-1)]" />
             Volume
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-3 rounded-sm bg-[var(--chart-2)]" />
+            <span className="inline-block h-2.5 w-3 bg-[var(--chart-2)]" />
             CPP
           </span>
-        </div>
-      </CardContent>
-    </Card>
+        </p>
+      </div>
+    </section>
   )
 }
 
@@ -269,8 +256,9 @@ export function CreativeVisualsGrid({
     <div className="grid gap-4 lg:grid-cols-2">
       {hasCategory2 ? (
         <CppVolumePanel
-          title="Spend by charge type — volume & CPP"
-          description="Package volume and cost per package by charge type (e.g. base freight, fuel, surcharges) from your invoice mapping."
+          figureLabel="Figure 2a."
+          title="Spend by charge type: volume and CPP"
+          description="Package volume and unit cost by mapped charge type (base freight, fuel, surcharges, etc.)."
           points={category2VolumeCpp.map((x) => ({
             label: formatChargeTypeLabel(x.category2),
             totalVolume: x.totalVolume,
@@ -283,8 +271,9 @@ export function CreativeVisualsGrid({
       ) : null}
       {hasMode ? (
         <CppVolumePanel
-          title="Mode — volume & CPP"
-          description="Ground vs air (zone-derived). Compare volume mix against unit cost (CPP) per mode."
+          figureLabel="Figure 2b."
+          title="Mode: volume and CPP"
+          description="Ground versus air (zone-derived). Volume mix compared to cost per package by mode."
           points={modeVolumeCpp.map((x) => ({
             label: x.mode,
             totalVolume: x.totalVolume,
