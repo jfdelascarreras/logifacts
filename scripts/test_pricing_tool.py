@@ -36,7 +36,7 @@ Test case file format (JSON array)
         "addressCorrection": 0,
         "declaredValue": 0
       },
-      "fuelSurchargeRates": {"ground": 0.275, "air": 0.3125}   // optional; omit = latest history
+      "fuelSurchargeRates": {"ground": 0.275, "air": 0.3125}   // optional; omit = audit week (2026-05-25)
     },
     "tool_result": {
       "totalEstimatedCharge": 27.33,      // REQUIRED — what the tool showed
@@ -86,6 +86,8 @@ RATES: dict[str, dict[str, dict[str, float]]] = _load("ups-rates.json")
 SB_RATES: dict[str, dict[str, dict[str, float]]] = _load("ups-sb-rates.json")
 ACCESSORIALS: dict[str, Any] = _load("accessorials.json")
 FUEL_HISTORY: list[dict] = _load("ups-fuel-surcharge-history.json")
+# Cross-validation fixtures were captured against this week's fuel — not "latest" history.
+CROSS_VALIDATION_UPS_FUEL_DATE = "2026-05-25"
 ZIP_SURCHARGES: dict[str, str] = _load("zip-surcharges.json")
 
 FEDEX_RATES: dict[str, dict[str, dict[str, float]]] = _load("fedex-rates.json")
@@ -208,9 +210,16 @@ def max_available_weight_sb(service: str) -> int:
     return max(int(k) for k in svc)
 
 
+def _fuel_history_entry(effective_date: str) -> dict:
+    for row in FUEL_HISTORY:
+        if row.get("effectiveDate") == effective_date:
+            return row
+    return FUEL_HISTORY[0]
+
+
 def get_fuel_surcharge_rate(service: str) -> float:
-    latest = FUEL_HISTORY[0]
-    return latest["domesticAir"] if service in AIR_SERVICES else latest["domesticGround"]
+    row = _fuel_history_entry(CROSS_VALIDATION_UPS_FUEL_DATE)
+    return row["domesticAir"] if service in AIR_SERVICES else row["domesticGround"]
 
 
 def base_zone(zone: int, service: str) -> int:

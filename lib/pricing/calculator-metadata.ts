@@ -4,9 +4,9 @@
  */
 
 export const CALCULATOR_VALIDATION = {
-  lastAudited: '2026-06-09',
+  lastAudited: '2026-06-16',
   toleranceUsd: 0.01,
-  vitest: { files: 4, tests: 85 },
+  vitest: { files: 5, tests: 90 },
   crossValidation: {
     ups: { cases: 50, passed: 50, fixture: 'scripts/pricing_test_cases.json' },
     fedex: { cases: 7, passed: 7, fixture: 'scripts/fedex_pricing_test_cases.json' },
@@ -15,15 +15,15 @@ export const CALCULATOR_VALIDATION = {
 
 export const FUEL_RATES = {
   ups: {
-    effectiveDate: '2026-05-25',
-    ground: 0.275,
-    air: 0.3125,
-    source: 'UPS weekly fuel surcharge index',
+    effectiveDate: '2026-06-15',
+    ground: 0.265,
+    air: 0.275,
+    source: 'UPS weekly fuel surcharge index (EIA + index tables)',
   },
   fedex: {
-    effectiveDate: '2026-06-01',
-    ground: 0.2675,
-    express: 0.3075,
+    effectiveDate: '2026-06-15',
+    ground: 0.26,
+    express: 0.27,
     source: 'FedEx weekly fuel surcharge index',
   },
 } as const
@@ -57,8 +57,8 @@ export const UPS_SOURCES: CarrierSourceRow[] = [
   },
   {
     publication: 'UPS weekly fuel surcharge index',
-    builds: 'Ground 27.5% · Air 31.25% (week of 2026-05-25)',
-    effectiveDate: '2026-05-25',
+    builds: 'Ground 26.5% · Air 27.5% (week of 2026-06-15) via EIA + index tables',
+    effectiveDate: '2026-06-15',
   },
 ]
 
@@ -85,8 +85,8 @@ export const FEDEX_SOURCES: CarrierSourceRow[] = [
   },
   {
     publication: 'FedEx weekly fuel surcharge index',
-    builds: 'Ground 26.75% · Express 30.75% (week of 2026-06-01)',
-    effectiveDate: '2026-06-01',
+    builds: 'Ground 26% · Express 27% (week of 2026-06-15)',
+    effectiveDate: '2026-06-15',
   },
 ]
 

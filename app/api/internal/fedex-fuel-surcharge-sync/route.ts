@@ -24,5 +24,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Could not resolve FedEx fuel surcharge rates' }, { status: 503 })
   }
 
+  if (rates.source === 'fallback') {
+    return NextResponse.json(
+      {
+        error: 'Live FedEx fuel scrape unavailable — only history JSON fallback resolved.',
+        source: rates.source,
+        ground: rates.ground,
+        express: rates.express,
+      },
+      { status: 503 },
+    )
+  }
+
   return NextResponse.json(rates)
 }

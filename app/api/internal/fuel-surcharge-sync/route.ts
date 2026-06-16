@@ -23,5 +23,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Could not resolve fuel surcharge rates' }, { status: 503 })
   }
 
+  // GitHub Actions must not commit history JSON from stale fallback — UPS page is JS-rendered
+  // and the HTML parser often fails; returning fallback would duplicate old rates under new dates.
+  if (rates.source === 'fallback') {
+    return NextResponse.json(
+      {
+        error: 'Live UPS fuel scrape unavailable — only history JSON fallback resolved.',
+        source: rates.source,
+        ground: rates.ground,
+        air: rates.air,
+      },
+      { status: 503 },
+    )
+  }
+
   return NextResponse.json(rates)
 }

@@ -1,4 +1,6 @@
 [
+  { "effectiveDate": "2026-06-15", "ground": 0.2600, "express": 0.2700 },
+  { "effectiveDate": "2026-06-08", "ground": 0.2650, "express": 0.2650 },
   { "effectiveDate": "2026-06-01", "ground": 0.2675, "express": 0.3075 },
   { "effectiveDate": "2026-05-25", "ground": 0.2700, "express": 0.3075 },
   { "effectiveDate": "2026-05-18", "ground": 0.2700, "express": 0.3075 },

@@ -1,0 +1,50 @@
+{
+  "_source": "UPS fuel surcharges page — National diesel + USGC jet index tables (2026)",
+  "_effectiveDate": "2026-06-01",
+  "domesticGroundDiesel": {
+    "stepUsd": 0.09,
+    "stepPct": 0.0025,
+    "floorMinUsd": 4.54,
+    "floorSurcharge": 0.2475,
+    "rows": [
+      { "min": 4.54, "max": 4.63, "surcharge": 0.2475 },
+      { "min": 4.63, "max": 4.72, "surcharge": 0.25 },
+      { "min": 4.72, "max": 4.81, "surcharge": 0.2525 },
+      { "min": 4.81, "max": 4.90, "surcharge": 0.255 },
+      { "min": 4.90, "max": 4.99, "surcharge": 0.2575 },
+      { "min": 4.99, "max": 5.08, "surcharge": 0.26 },
+      { "min": 5.08, "max": 5.17, "surcharge": 0.2625 },
+      { "min": 5.17, "max": 5.26, "surcharge": 0.265 },
+      { "min": 5.26, "max": 5.35, "surcharge": 0.2675 },
+      { "min": 5.35, "max": 5.44, "surcharge": 0.27 },
+      { "min": 5.44, "max": 5.53, "surcharge": 0.2725 },
+      { "min": 5.53, "max": 5.62, "surcharge": 0.275 },
+      { "min": 5.62, "max": 5.71, "surcharge": 0.2775 },
+      { "min": 5.71, "max": 5.80, "surcharge": 0.28 },
+      { "min": 5.80, "max": 5.89, "surcharge": 0.2825 }
+    ]
+  },
+  "domesticAirJet": {
+    "stepUsd": 0.05,
+    "stepPct": 0.0025,
+    "floorMinUsd": 3.01,
+    "floorSurcharge": 0.2575,
+    "rows": [
+      { "min": 3.01, "max": 3.06, "surcharge": 0.2575 },
+      { "min": 3.06, "max": 3.11, "surcharge": 0.26 },
+      { "min": 3.11, "max": 3.16, "surcharge": 0.2625 },
+      { "min": 3.16, "max": 3.21, "surcharge": 0.265 },
+      { "min": 3.21, "max": 3.26, "surcharge": 0.2675 },
+      { "min": 3.26, "max": 3.31, "surcharge": 0.27 },
+      { "min": 3.31, "max": 3.36, "surcharge": 0.2725 },
+      { "min": 3.36, "max": 3.41, "surcharge": 0.275 },
+      { "min": 3.41, "max": 3.46, "surcharge": 0.2775 },
+      { "min": 3.46, "max": 3.51, "surcharge": 0.28 },
+      { "min": 3.51, "max": 3.56, "surcharge": 0.2825 },
+      { "min": 3.56, "max": 3.61, "surcharge": 0.285 },
+      { "min": 3.61, "max": 3.66, "surcharge": 0.2875 },
+      { "min": 3.66, "max": 3.71, "surcharge": 0.29 },
+      { "min": 3.71, "max": 3.76, "surcharge": 0.2925 }
+    ]
+  }
+}

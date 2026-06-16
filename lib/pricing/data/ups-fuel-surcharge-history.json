@@ -1,4 +1,7 @@
 [
+  { "effectiveDate": "2026-06-15", "domesticGround": 0.2650, "domesticAir": 0.2750, "intlAirExport": 0.3750, "intlAirImport": 0.4125, "intlGroundExportImport": 0.2800 },
+  { "effectiveDate": "2026-06-08", "domesticGround": 0.2700, "domesticAir": 0.2700, "intlAirExport": 0.3700, "intlAirImport": 0.4075, "intlGroundExportImport": 0.2825 },
+  { "effectiveDate": "2026-06-01", "domesticGround": 0.2725, "domesticAir": 0.3125, "intlAirExport": 0.4250, "intlAirImport": 0.4625, "intlGroundExportImport": 0.2850 },
   { "effectiveDate": "2026-05-25", "domesticGround": 0.2750, "domesticAir": 0.3125, "intlAirExport": 0.4150, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775 },
   { "effectiveDate": "2026-05-18", "domesticGround": 0.2775, "domesticAir": 0.3075, "intlAirExport": 0.4075, "intlAirImport": 0.4450, "intlGroundExportImport": 0.2775 },
   { "effectiveDate": "2026-05-11", "domesticGround": 0.2775, "domesticAir": 0.3150, "intlAirExport": 0.4150, "intlAirImport": 0.4525, "intlGroundExportImport": 0.2775 },

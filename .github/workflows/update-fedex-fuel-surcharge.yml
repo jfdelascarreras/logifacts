@@ -37,14 +37,19 @@ jobs:
           fi
 
           if [ "$HTTP_STATUS" = "503" ]; then
-            echo "⚠️  FedEx scrape failed (503) — WAF may have blocked the request."
-            echo "The history JSON was NOT updated. Last known rates remain in place."
+            echo "⚠️  FedEx live scrape failed (503) — history JSON was NOT updated."
             exit 0
           fi
 
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "⚠️  UNEXPECTED HTTP $HTTP_STATUS"
             exit 1
+          fi
+
+          SOURCE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('source',''))" 2>/dev/null)
+          if [ "$SOURCE" = "fallback" ]; then
+            echo "⚠️  Response source=fallback — refusing to commit stale rates."
+            exit 0
           fi
 
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
