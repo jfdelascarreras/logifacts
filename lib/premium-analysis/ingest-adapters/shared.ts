@@ -60,7 +60,7 @@ async function fetchInvoiceLinesForId(
     if (error) {
       throw new Error(`invoice_lines fetch failed for ${invoiceId}: ${error.message}`)
     }
-    const batch = (data ?? []) as RawInvoiceLine[]
+    const batch = (data ?? []) as unknown as RawInvoiceLine[]
     lines.push(...batch)
     if (batch.length < INVOICE_LINES_PAGE_SIZE) break
     offset += INVOICE_LINES_PAGE_SIZE
@@ -97,7 +97,7 @@ export async function fetchProcessedInvoiceMeta(
     console.warn('[ingest-adapters] invoice metadata fetch error:', error.message)
     return []
   }
-  return (data ?? []) as RawInvoiceMeta[]
+  return (data ?? []) as unknown as RawInvoiceMeta[]
 }
 
 /** Fetch processed multipart invoice headers for the given carriers. */

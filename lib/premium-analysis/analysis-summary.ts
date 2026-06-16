@@ -9,7 +9,9 @@ import {
   type InvoiceRecord,
 } from '@/lib/invoices/csv'
 import type { AgentsAnalysisExtensions } from '@/lib/premium-analysis/agents-types'
+import type { RunRegression } from '@/lib/premium-analysis/analysis-regression'
 import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
+import type { StaleIngestAlert } from '@/lib/premium-analysis/stale-ingest'
 import type { SpecCategoriesSummary } from '@/lib/premium-analysis/spec-categories'
 
 import type { SpendShipmentPeriodMatrix } from './period-averages-matrix'
@@ -171,6 +173,12 @@ export type InvoiceAnalysisSummary = {
   savingsEstimate?: AgentsAnalysisExtensions['savingsEstimate']
   actionItems?: AgentsAnalysisExtensions['actionItems']
   datasetFlags?: AgentsAnalysisExtensions['datasetFlags']
+  ingestQuality?: AgentsAnalysisExtensions['ingestQuality']
+  ingestSource?: AgentsAnalysisExtensions['ingestSource']
+  /** Set on unfiltered analyze when stored facts lag current parser versions. */
+  staleIngest?: StaleIngestAlert
+  /** Compares current run to the prior persisted analysis run. */
+  runRegression?: RunRegression
 }
 
 export type InvoiceAnalysisSummaryWithAgents = InvoiceAnalysisSummary & AgentsAnalysisExtensions

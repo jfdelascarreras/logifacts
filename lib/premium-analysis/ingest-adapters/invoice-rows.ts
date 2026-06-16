@@ -83,7 +83,7 @@ export async function fetchInvoiceRowsForUser(
       throw new Error(`invoice_rows fetch failed: ${error.message}`)
     }
 
-    const batch = (data ?? []) as RawInvoiceRow[]
+    const batch = (data ?? []) as unknown as RawInvoiceRow[]
     rows.push(...batch)
     if (batch.length < INVOICE_ROWS_PAGE_SIZE) break
     offset += INVOICE_ROWS_PAGE_SIZE
