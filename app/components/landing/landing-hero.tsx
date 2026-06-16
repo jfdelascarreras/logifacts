@@ -102,9 +102,6 @@ export function LandingHero({
           isSignedIn={isSignedIn}
         />
 
-        <footer className="text-sm text-muted-foreground">
-          Built for teams who want cleaner shipment intelligence.
-        </footer>
       </div>
     </div>
   )

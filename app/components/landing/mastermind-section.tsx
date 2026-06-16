@@ -1,13 +1,13 @@
 'use client'
 
-import { ExternalLink, CalendarClock, Package, Route, Truck, Video } from 'lucide-react'
+import { ArrowRight, CalendarClock, ExternalLink, Gauge, Target, Users, Video } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
 
 import {
+  MASTERMIND_SESSION_DURATION,
   MASTERMIND_SESSION_WHEN,
-  MASTERMIND_SESSION_WHEN_LONG,
   MASTERMIND_TEAMS_JOIN_URL,
 } from '@/lib/mastermind/constants'
 import { Button } from '@/components/ui/button'
@@ -30,9 +30,24 @@ type RegisterResponse = {
 }
 
 const HIGHLIGHTS = [
-  { icon: Truck, label: 'Carrier billing war stories — not slide decks' },
-  { icon: Package, label: 'Surcharges, zones, accessorials — ask anything' },
-  { icon: Route, label: 'Operators, TMs, and freight auditors in one room' },
+  {
+    icon: Target,
+    title: 'Measure what moves the needle',
+    description:
+      'Stop tracking vanity metrics. Learn the one question that reveals whether your data is driving the right outcomes and behaviors.',
+  },
+  {
+    icon: Users,
+    title: 'Get your numbers in front of the people who decide',
+    description:
+      "Insight only matters if it reaches the right people at the moment of decision. We'll show you how to communicate data so it actually changes what people do.",
+  },
+  {
+    icon: Gauge,
+    title: 'Know if "good" is actually good',
+    description:
+      'Without a benchmark, every number is just noise. Walk away able to tell at a glance whether a result is a win or a warning sign.',
+  },
 ] as const
 
 export function MastermindSection({
@@ -95,7 +110,7 @@ export function MastermindSection({
             <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-10">
               <Image
                 src="/join-panel/podcast-invite.png"
-                alt="LogiFacts Mastermind — live operator roundtable for shippers"
+                alt="LogiFacts Mastermind — free conversation for business leaders and analysts"
                 width={420}
                 height={210}
                 className="relative z-10 h-auto w-full max-w-[320px] object-contain drop-shadow-lg sm:max-w-[360px]"
@@ -106,51 +121,55 @@ export function MastermindSection({
               <p className="text-sm font-medium text-foreground">{MASTERMIND_SESSION_WHEN}</p>
             </div>
             <div className="absolute bottom-4 right-0 z-20 max-w-[12rem] rounded-2xl bg-[color-mix(in_srgb,var(--chart-1)_92%,transparent)] px-3 py-2 text-white shadow-md">
-              <p className="text-xs leading-snug opacity-90">Operators · TMs · Freight audit</p>
-              <p className="font-heading text-sm font-semibold">Your lane, your voice</p>
+              <p className="text-xs leading-snug opacity-90">Free · {MASTERMIND_SESSION_DURATION}</p>
+              <p className="font-heading text-sm font-semibold">Spots are limited</p>
             </div>
           </div>
         </div>
 
         <div className="space-y-6">
           <header className="space-y-4">
-            <p className="font-heading text-sm font-semibold uppercase tracking-[0.2em] text-accent">
-              You&apos;re invited
-            </p>
             <h2
               id="mastermind-heading"
               className="font-heading text-balance text-3xl font-semibold tracking-wide text-foreground sm:text-4xl"
             >
-              Join our upcoming Mastermind — built for operators who live freight every day
+              Join Our Mastermind!
             </h2>
+            <p className="font-heading text-xl font-semibold tracking-wide text-accent sm:text-2xl">
+              Ready to Measure What Actually Matters?
+            </p>
             <div
-              className="flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3"
+              className="flex max-w-xl items-start gap-3 rounded-2xl border border-accent/25 bg-accent/5 px-4 py-3.5 sm:px-5 sm:py-4"
               role="note"
-              aria-label={`Session date and time: ${MASTERMIND_SESSION_WHEN_LONG}`}
+              aria-label={`Free Mastermind session on ${MASTERMIND_SESSION_WHEN} for business leaders and analysts`}
             >
               <CalendarClock className="mt-0.5 size-5 shrink-0 text-accent" aria-hidden />
-              <div className="space-y-1">
-                <p className="font-heading text-sm font-semibold tracking-wide text-foreground">
-                  {MASTERMIND_SESSION_WHEN}
+              <div className="space-y-1.5">
+                <p className="text-pretty text-sm leading-7 text-muted-foreground sm:text-base">
+                  Join us for a free {MASTERMIND_SESSION_DURATION} Mastermind conversation on{' '}
+                  <span className="font-semibold text-foreground">{MASTERMIND_SESSION_WHEN}</span>.
                 </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {MASTERMIND_SESSION_WHEN_LONG}
+                <p className="font-heading text-sm font-semibold tracking-wide text-accent sm:text-base">
+                  Built for business leaders and analysts who are ready to think differently about
+                  performance.
                 </p>
               </div>
             </div>
             <p className="max-w-xl text-pretty text-sm leading-7 text-muted-foreground sm:text-base">
-              Parcel invoices, accessorials, zone gaps, rate cards — the work is rarely simple, and
-              rarely solo. This is a live session with transportation managers, freight analysts, and
-              logistics operators who know the grind. Bring your carrier questions. Leave with sharper
-              spend visibility and peers on the same lane.
+              We&apos;ll explore how to re-imagine the way you measure your business, what&apos;s
+              working, what isn&apos;t, and how to close the gap. You&apos;ll leave with at least one
+              practical measurement insight you can put to work immediately.
             </p>
-            <ul className="space-y-2.5 pt-1">
-              {HIGHLIGHTS.map(({ icon: Icon, label }) => (
-                <li key={label} className="flex items-center gap-3 text-sm text-foreground">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <ul className="space-y-3 pt-1">
+              {HIGHLIGHTS.map(({ icon: Icon, title, description }) => (
+                <li key={title} className="flex items-start gap-3 text-sm text-foreground">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
                     <Icon className="size-4" aria-hidden />
                   </span>
-                  {label}
+                  <span className="leading-relaxed">
+                    <span className="font-medium">{title}</span>
+                    <span className="text-muted-foreground"> — {description}</span>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -160,18 +179,17 @@ export function MastermindSection({
             <div className="space-y-5 border-t border-border/60 pt-6">
               <div className="space-y-2">
                 <h3 className="font-heading text-2xl font-semibold tracking-wide text-foreground">
-                  {wasAlreadyRegistered
-                    ? "You're already on the manifest — glad to have you back"
-                    : "You're on the manifest — see you in the room"}
+                  {wasAlreadyRegistered ? "You're already signed up" : "You're signed up!"}
                 </h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {wasAlreadyRegistered
                     ? `Your registration is updated. We'll see you ${MASTERMIND_SESSION_WHEN}.`
-                    : `Your seat is saved for ${MASTERMIND_SESSION_WHEN}. When we go live, you belong in this freight conversation.`}
+                    : `Your spot is saved for ${MASTERMIND_SESSION_WHEN}. Here are your session details below.`}
                 </p>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Save the Teams link below — one click at 12:00 PM EST on June 25 and you&apos;re on the call with fellow shippers and operators.
+                Use the link below to join the conversation — save it now so you have your calendar
+                invite details ready.
               </p>
               <Button
                 type="button"
@@ -181,76 +199,80 @@ export function MastermindSection({
               >
                 <a href={MASTERMIND_TEAMS_JOIN_URL} target="_blank" rel="noopener noreferrer">
                   <Video className="size-4 shrink-0" aria-hidden />
-                  Join the operator call on Teams
+                  Join on Teams
                   <ExternalLink className="size-3.5 opacity-90" aria-hidden />
                 </a>
               </Button>
               {!isSignedIn ? (
                 <p className="text-sm text-muted-foreground">
-                  Want parcel spend intelligence between sessions?{' '}
+                  Want more from LogiFacts between sessions?{' '}
                   <Link
                     href="/auth/sign-up"
                     className="text-accent underline underline-offset-4 transition-colors hover:text-accent/85"
                   >
-                    Create a free LogiFacts account
-                  </Link>{' '}
-                  and stay in the shipper community.
+                    Create a free account
+                  </Link>
+                  .
                 </p>
               ) : null}
             </div>
           ) : (
             <div className="border-t border-border/60 pt-6">
-              <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
-                Tell us your name and shipper — we&apos;ll welcome you by name on {MASTERMIND_SESSION_WHEN}.
-              </p>
+              <p className="mb-5 text-sm font-medium text-foreground">Spots are limited.</p>
               <form onSubmit={handleSubmit} noValidate aria-busy={isLoading} className="space-y-5">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div className="grid gap-2">
                     <Label htmlFor="mastermind-full-name">Name</Label>
-                    <Input
-                      id="mastermind-full-name"
-                      type="text"
-                      autoComplete="name"
-                      required
-                      value={fullName}
-                      onChange={(event) => setFullName(event.target.value)}
-                      placeholder="Jane Smith"
-                      className="border-0 border-b border-border/80 bg-transparent px-0 shadow-none rounded-none focus-visible:border-accent focus-visible:ring-0"
-                    />
+                    <div className="mastermind-input-glaze relative px-1 py-0.5">
+                      <Input
+                        id="mastermind-full-name"
+                        type="text"
+                        autoComplete="name"
+                        required
+                        value={fullName}
+                        onChange={(event) => setFullName(event.target.value)}
+                        placeholder="Jane Smith"
+                        className="rounded-none border-0 border-b border-border/80 bg-transparent px-0 shadow-none focus-visible:border-accent focus-visible:ring-0"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid gap-2">
-                    <Label htmlFor="mastermind-company-name">Shipper / company</Label>
-                    <Input
-                      id="mastermind-company-name"
-                      type="text"
-                      autoComplete="organization"
-                      required
-                      value={companyName}
-                      onChange={(event) => setCompanyName(event.target.value)}
-                      placeholder="Acme Freight Co."
-                      className="border-0 border-b border-border/80 bg-transparent px-0 shadow-none rounded-none focus-visible:border-accent focus-visible:ring-0"
-                    />
+                    <Label htmlFor="mastermind-company-name">Company Name</Label>
+                    <div className="mastermind-input-glaze mastermind-input-glaze-delay-1 relative px-1 py-0.5">
+                      <Input
+                        id="mastermind-company-name"
+                        type="text"
+                        autoComplete="organization"
+                        required
+                        value={companyName}
+                        onChange={(event) => setCompanyName(event.target.value)}
+                        placeholder="Acme Co."
+                        className="rounded-none border-0 border-b border-border/80 bg-transparent px-0 shadow-none focus-visible:border-accent focus-visible:ring-0"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid gap-2">
                   <Label htmlFor="mastermind-email">Email</Label>
-                  <Input
-                    id="mastermind-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    readOnly={isSignedIn}
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="jane@company.com"
-                    className="border-0 border-b border-border/80 bg-transparent px-0 shadow-none rounded-none focus-visible:border-accent focus-visible:ring-0"
-                    aria-describedby={isSignedIn ? 'mastermind-email-help' : undefined}
-                  />
+                  <div className="mastermind-input-glaze mastermind-input-glaze-delay-2 relative px-1 py-0.5">
+                    <Input
+                      id="mastermind-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      readOnly={isSignedIn}
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="jane@company.com"
+                      className="rounded-none border-0 border-b border-border/80 bg-transparent px-0 shadow-none focus-visible:border-accent focus-visible:ring-0"
+                      aria-describedby={isSignedIn ? 'mastermind-email-help' : undefined}
+                    />
+                  </div>
                   {isSignedIn ? (
                     <p id="mastermind-email-help" className="text-xs text-muted-foreground">
-                      We&apos;ll use your account email — one operator, one seat on the manifest.
+                      We&apos;ll use your account email so you&apos;re not registered twice.
                     </p>
                   ) : null}
                 </div>
@@ -261,18 +283,25 @@ export function MastermindSection({
                   </p>
                 ) : null}
 
-                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-3 pt-1">
                   <Button
                     type="submit"
                     size="lg"
-                    className="bg-accent text-accent-foreground hover:bg-accent/90"
+                    className="gap-2 bg-accent text-accent-foreground hover:bg-accent/90 sm:w-auto"
                     disabled={isLoading}
                   >
-                    {isLoading ? 'Saving your seat…' : 'Save my seat at the table'}
+                    {isLoading ? (
+                      'Signing you up…'
+                    ) : (
+                      <>
+                        Sign Up Now and get the calendar invite with details
+                        <ArrowRight className="size-4 shrink-0" aria-hidden />
+                      </>
+                    )}
                   </Button>
                   {!isSignedIn ? (
                     <p className="text-sm text-muted-foreground">
-                      Already part of LogiFacts?{' '}
+                      Already have a LogiFacts account?{' '}
                       <Link
                         href="/auth/login"
                         className="text-accent underline underline-offset-4 hover:text-accent/85"
