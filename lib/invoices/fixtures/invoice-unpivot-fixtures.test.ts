@@ -90,6 +90,10 @@ describe('invoice unpivot fixtures (real carrier workbooks)', () => {
 
     expect(lines.some((l) => l.charge_description === 'Fuel Surcharge' && l.charge_amount === 2.68)).toBe(true)
     expect(lines.some((l) => l.charge_description === 'Discount' && l.charge_amount < 0)).toBe(true)
+
+    const withTracking = lines.filter((l) => l.tracking_id?.trim())
+    expect(withTracking.length).toBeGreaterThan(0)
+    expect(new Set(withTracking.map((l) => l.tracking_id)).size).toBeGreaterThan(100)
   })
 
   const EXPECTED_WWE_UNPIVOT_UNIQ = new Set([

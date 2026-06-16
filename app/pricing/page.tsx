@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { AuthenticatedShell } from '@/app/components/navigation/authenticated-shell'
-import { UPSQuoteForm } from '@/app/components/pricing/ups-quote-form'
+import { ShipmentQuoteForm } from '@/app/components/pricing/shipment-quote-form'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function PricingPage() {
@@ -13,21 +13,20 @@ export default async function PricingPage() {
 
   return (
     <AuthenticatedShell
-      title="UPS Rate Estimator"
-      subtitle="Estimate your shipping cost by service and destination"
+      title="LogiFacts Shipment Calculator"
+      subtitle="Multi-carrier rate modeling · UPS & FedEx · 2026 published tariffs"
     >
       {!originZip && (
-        <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
-          No origin ZIP set. Add your shipping origin ZIP in{' '}
-          <a href="/protected" className="underline underline-offset-2">
+        <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <span className="font-medium">Origin ZIP not configured.</span>{' '}
+          Add your shipping origin in{' '}
+          <a href="/protected" className="font-semibold underline underline-offset-2">
             My Profile
           </a>{' '}
-          to prefill this form, or enter it manually below.
+          to prefill lane inputs.
         </div>
       )}
-      <div className="max-w-2xl">
-        <UPSQuoteForm defaultOriginZip={originZip} />
-      </div>
+      <ShipmentQuoteForm defaultOriginZip={originZip} />
     </AuthenticatedShell>
   )
 }

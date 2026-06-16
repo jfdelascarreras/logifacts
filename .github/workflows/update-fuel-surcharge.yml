@@ -48,10 +48,23 @@ jobs:
             exit 1
           fi
 
+          if [ "$HTTP_STATUS" = "503" ]; then
+            echo ""
+            echo "⚠️  LIVE SCRAPE FAILED (503) — UPS page is JS-rendered; history JSON was NOT updated."
+            echo "Fix: update lib/pricing/data/ups-fuel-surcharge-history.json manually from ups.com fuel page."
+            exit 0
+          fi
+
           if [ "$HTTP_STATUS" != "200" ]; then
             echo ""
             echo "⚠️  UNEXPECTED HTTP $HTTP_STATUS — check the app logs on Vercel"
             exit 1
+          fi
+
+          SOURCE=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('source',''))" 2>/dev/null)
+          if [ "$SOURCE" = "fallback" ]; then
+            echo "⚠️  Response source=fallback — refusing to commit stale rates."
+            exit 0
           fi
 
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT

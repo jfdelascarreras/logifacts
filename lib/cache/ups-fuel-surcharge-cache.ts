@@ -1,5 +1,6 @@
 import { redis } from '@/lib/cache/redis'
 import { parseFuelSurchargeFromHtml, type LiveFuelRates } from '@/lib/pricing/ups-fuel-surcharge'
+import { resolveUpsFuelFromEia } from '@/lib/pricing/ups-fuel-from-eia'
 import { loadFuelSurchargeHistory } from '@/lib/pricing/ups-fuel-surcharge-history'
 
 export const FUEL_SURCHARGE_REDIS_KEY = 'ups:fuel-surcharge'
@@ -9,7 +10,7 @@ const UPS_URL =
   process.env.UPS_FUEL_SURCHARGE_URL ??
   'https://www.ups.com/us/en/support/shipping-support/shipping-costs-rates/fuel-surcharges.page'
 
-export type FuelSurchargeSource = 'cache' | 'live' | 'fallback'
+export type FuelSurchargeSource = 'cache' | 'live' | 'eia' | 'fallback'
 
 export type ResolvedFuelRates = LiveFuelRates & { source: FuelSurchargeSource }
 
@@ -29,7 +30,7 @@ function fallbackFromHistory(): LiveFuelRates | null {
   return { ground: latest.domesticGround, air: latest.domesticAir }
 }
 
-async function fetchLiveFromUps(): Promise<LiveFuelRates | null> {
+async function fetchLiveFromUpsHtml(): Promise<LiveFuelRates | null> {
   const res = await fetch(UPS_URL, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Logifacts/1.0)' },
     signal: AbortSignal.timeout(10_000),
@@ -39,13 +40,34 @@ async function fetchLiveFromUps(): Promise<LiveFuelRates | null> {
   return parseFuelSurchargeFromHtml(html)
 }
 
+async function fetchLiveRates(): Promise<LiveFuelRates | null> {
+  const fromHtml = await fetchLiveFromUpsHtml()
+  if (fromHtml && isValidRates(fromHtml)) return fromHtml
+
+  const fromEia = await resolveUpsFuelFromEia()
+  if (fromEia && isValidRates(fromEia)) return fromEia
+
+  return null
+}
+
 async function fetchAndCacheLive(): Promise<LiveFuelRates | null> {
   if (inflightLiveFetch) return inflightLiveFetch
 
   inflightLiveFetch = (async () => {
     try {
-      const rates = await fetchLiveFromUps()
-      if (rates && isValidRates(rates)) {
+      const fromHtml = await fetchLiveFromUpsHtml()
+      if (fromHtml && isValidRates(fromHtml)) {
+        try {
+          await redis?.set(FUEL_SURCHARGE_REDIS_KEY, fromHtml, { ex: TTL_SECONDS })
+        } catch {
+          // Cache write failure is non-fatal
+        }
+        return fromHtml
+      }
+
+      const fromEia = await resolveUpsFuelFromEia()
+      if (fromEia && isValidRates(fromEia)) {
+        const rates = { ground: fromEia.ground, air: fromEia.air }
         try {
           await redis?.set(FUEL_SURCHARGE_REDIS_KEY, rates, { ex: TTL_SECONDS })
         } catch {
@@ -53,6 +75,7 @@ async function fetchAndCacheLive(): Promise<LiveFuelRates | null> {
         }
         return rates
       }
+
       return null
     } finally {
       inflightLiveFetch = null
@@ -64,10 +87,7 @@ async function fetchAndCacheLive(): Promise<LiveFuelRates | null> {
 
 /**
  * Resolves current UPS domestic fuel surcharge rates.
- * Order: Redis cache → live UPS scrape (when warmCache) → history JSON fallback.
- *
- * When warmCache is false and cache is cold, returns history immediately and
- * scrapes UPS in the background so the next request hits Redis.
+ * Order: Redis cache → UPS HTML scrape → EIA index lookup → history JSON fallback.
  */
 export async function resolveFuelSurchargeRates(options?: {
   warmCache?: boolean
@@ -83,8 +103,15 @@ export async function resolveFuelSurchargeRates(options?: {
 
   if (options?.warmCache) {
     try {
-      const live = await fetchAndCacheLive()
-      if (live) return { ...live, source: 'live' }
+      const fromHtml = await fetchLiveFromUpsHtml()
+      if (fromHtml && isValidRates(fromHtml)) {
+        return { ...fromHtml, source: 'live' }
+      }
+
+      const fromEia = await resolveUpsFuelFromEia()
+      if (fromEia && isValidRates(fromEia)) {
+        return { ground: fromEia.ground, air: fromEia.air, source: 'eia' }
+      }
     } catch {
       // Network/parse failure — fall through to history
     }
@@ -98,5 +125,14 @@ export async function resolveFuelSurchargeRates(options?: {
     return { ...fallback, source: 'fallback' }
   }
 
+  return null
+}
+
+/** @internal Exposed for tests — resolves live path without cache/history. */
+export async function resolveUpsFuelLiveForTests(): Promise<ResolvedFuelRates | null> {
+  const fromHtml = await fetchLiveFromUpsHtml()
+  if (fromHtml) return { ...fromHtml, source: 'live' }
+  const fromEia = await resolveUpsFuelFromEia()
+  if (fromEia) return { ground: fromEia.ground, air: fromEia.air, source: 'eia' }
   return null
 }

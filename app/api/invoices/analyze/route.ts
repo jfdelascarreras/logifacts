@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
-import { hasActiveInvoiceFilters } from '@/lib/invoices/analysis-summary'
-import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
+import { computePremiumInvoiceAnalysis, hasActiveInvoiceFilters, persistPremiumAnalysisCache } from '@/lib/premium-analysis'
+import {
+  invoiceRowsWriteEnabled,
+  syncUpsInvoiceRows,
+} from '@/lib/invoices/invoice-rows'
 import {
   getAnalysisCache,
   invalidateAnalysisCache,
   setAnalysisCache,
 } from '@/lib/cache/analysis-cache'
+import { buildAnalysisRunRow, fetchLatestAnalysisRuns, recordAnalysisRun } from '@/lib/premium-analysis/analysis-runs'
+import { compareAnalysisRunRegression } from '@/lib/premium-analysis/analysis-regression'
+import { detectStaleIngest } from '@/lib/premium-analysis/stale-ingest'
 
 /** Allow long runs when recomputing many large CSVs (hosting plan must support it, e.g. Vercel Pro). */
 export const maxDuration = 120
@@ -35,14 +41,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
+  const startedAt = Date.now()
+
   const computed = await computePremiumInvoiceAnalysis(supabase, user, filtersRaw)
+  const durationMs = Date.now() - startedAt
   if (!computed.ok) {
     return NextResponse.json({ error: computed.message }, { status: computed.status })
   }
 
-  const { summaryCore, summaryForDashboard: summary, uploadsCount } = computed.data
+  const { summaryCore, summaryForDashboard: summary, uploadsCount, upsSyncTagged } = computed.data
   const appliedFilters = summary.appliedFilters
   const filtersActive = hasActiveInvoiceFilters(appliedFilters)
+
+  let summaryForPersist = summary
+  if (!filtersActive) {
+    const carriers = Object.keys(summary.byCarrier ?? {})
+    const staleIngest = detectStaleIngest(summary.ingestDiagnostics?.parseVersions ?? [], carriers)
+    const priorRuns = await fetchLatestAnalysisRuns(supabase, user.id, 1)
+    const runRegression = priorRuns[0]
+      ? compareAnalysisRunRegression(
+          {
+            totalCost: summary.measures.totalCost,
+            shipmentCount: summary.measures.packageDedupeShipmentCount,
+            lineCount: summary.totalRows,
+          },
+          priorRuns[0]
+        )
+      : null
+    summaryForPersist = {
+      ...summary,
+      staleIngest,
+      ...(runRegression ? { runRegression } : {}),
+    }
+  }
 
   const spendRows: Array<{
     user_id: string
@@ -62,6 +93,8 @@ export async function POST(request: Request) {
   // Failures here are non-fatal: the dashboard reads invoice_upload_analyses, not this table.
   // A missing `account_number` column (migration not yet applied) should not block the refresh.
   let spendSyncWarning: string | undefined
+  let invoiceRowsSyncWarning: string | undefined
+  let invoiceRowsSynced: number | undefined
   if (!filtersActive) {
     const { error: clearSpendError } = await supabase
       .from('invoice_spend_by_date')
@@ -85,47 +118,40 @@ export async function POST(request: Request) {
         spendSyncWarning = `daily-spend upsert: ${spendUpsertError.message}`
       }
     }
-  }
 
-  // Cache the analysis against the most recent UPS upload row (if one exists).
-  // FedEx/WWE-only users (no invoice_uploads) skip the upsert — the summary is
-  // returned live and the GET endpoint falls back to a direct compute.
-  const {
-    data: latestUpload,
-    error: latestUploadErr,
-  } = await supabase
-    .from('invoice_uploads')
-    .select('id')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (latestUploadErr) {
-    return NextResponse.json({ error: latestUploadErr.message }, { status: 400 })
-  }
-
-  if (latestUpload?.id) {
-    const { error: upsertError } = await supabase
-      .from('invoice_upload_analyses')
-      .upsert(
-        { user_id: user.id, invoice_upload_id: latestUpload.id, summary },
-        { onConflict: 'invoice_upload_id' }
-      )
-    if (upsertError) {
-      return NextResponse.json({ error: upsertError.message }, { status: 400 })
+    if (invoiceRowsWriteEnabled() && upsSyncTagged.length > 0) {
+      const syncResult = await syncUpsInvoiceRows(supabase, user.id, upsSyncTagged)
+      if (syncResult.error) {
+        invoiceRowsSyncWarning = `invoice-rows sync: ${syncResult.error}`
+      } else {
+        invoiceRowsSynced = syncResult.rowCount
+      }
     }
+  }
+
+  let analysisCacheWarning: string | undefined
+  const cacheResult = await persistPremiumAnalysisCache(supabase, user.id, summaryForPersist)
+  if (cacheResult.error) {
+    return NextResponse.json({ error: cacheResult.error }, { status: 400 })
+  }
+  if (cacheResult.warning) {
+    analysisCacheWarning = cacheResult.warning
   }
 
   // Invalidate Redis so the next GET fetches fresh data from Supabase.
   await invalidateAnalysisCache(user.id)
 
+  await recordAnalysisRun(supabase, buildAnalysisRunRow(user.id, summaryForPersist, durationMs))
+
   return NextResponse.json(
     {
-      uploadId: latestUpload?.id,
+      uploadId: cacheResult.uploadId,
       uploadsAnalyzed: uploadsCount,
-      summary,
+      summary: summaryForPersist,
       ...(spendSyncWarning ? { spendSyncWarning } : {}),
+      ...(invoiceRowsSyncWarning ? { invoiceRowsSyncWarning } : {}),
+      ...(invoiceRowsSynced != null ? { invoiceRowsSynced } : {}),
+      ...(analysisCacheWarning ? { analysisCacheWarning } : {}),
     },
     {
       headers: {

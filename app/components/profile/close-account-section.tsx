@@ -66,7 +66,7 @@ export function CloseAccountSection({ email }: CloseAccountSectionProps) {
     <section className="rounded-2xl border border-destructive/30 bg-card p-6">
       <h2 className="text-lg font-semibold text-foreground">Close account</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        Permanently delete your Logifacts account, uploaded invoices, and analysis data. This cannot
+        Permanently delete your LogiFacts account, uploaded invoices, and analysis data. This cannot
         be undone.
       </p>
       <Button

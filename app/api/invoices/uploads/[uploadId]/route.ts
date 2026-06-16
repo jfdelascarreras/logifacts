@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import { invalidateAnalysisCache } from '@/lib/cache/analysis-cache'
+import { deleteUserInvoiceUpload, parseUploadSource } from '@/lib/invoices/upload-management'
 import { createClient } from '@/lib/supabase/server'
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ uploadId: string }> }
 ) {
   const supabase = await createClient()
@@ -23,63 +23,21 @@ export async function DELETE(
     return NextResponse.json({ error: 'Upload id is required' }, { status: 400 })
   }
 
-  const { data: upload, error: uploadError } = await supabase
-    .from('invoice_uploads')
-    .select('id, original_file_name')
-    .eq('id', uploadId)
-    .eq('user_id', user.id)
-    .maybeSingle()
+  const url = new URL(request.url)
+  const source = parseUploadSource(url.searchParams.get('source'))
 
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 400 })
+  try {
+    const result = await deleteUserInvoiceUpload(supabase, user.id, uploadId, source)
+    return NextResponse.json({
+      deletedUploadId: uploadId,
+      deletedFileName: result.deletedFileName,
+      remainingUploads: result.remainingUploads,
+      cleared: result.cleared,
+      source,
+    })
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status ?? 400
+    const message = err instanceof Error ? err.message : 'Delete failed'
+    return NextResponse.json({ error: message }, { status })
   }
-
-  if (!upload) {
-    return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
-  }
-
-  const { error: analysisDeleteError } = await supabase
-    .from('invoice_upload_analyses')
-    .delete()
-    .eq('invoice_upload_id', uploadId)
-    .eq('user_id', user.id)
-
-  if (analysisDeleteError) {
-    return NextResponse.json({ error: analysisDeleteError.message }, { status: 400 })
-  }
-
-  const { error: uploadDeleteError } = await supabase
-    .from('invoice_uploads')
-    .delete()
-    .eq('id', uploadId)
-    .eq('user_id', user.id)
-
-  if (uploadDeleteError) {
-    return NextResponse.json({ error: uploadDeleteError.message }, { status: 400 })
-  }
-
-  await invalidateAnalysisCache(user.id)
-
-  const { count: remainingUploads, error: countError } = await supabase
-    .from('invoice_uploads')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-
-  if (countError) {
-    return NextResponse.json({ error: countError.message }, { status: 400 })
-  }
-
-  const remaining = remainingUploads ?? 0
-
-  if (remaining === 0) {
-    await supabase.from('invoice_upload_analyses').delete().eq('user_id', user.id)
-    await supabase.from('invoice_spend_by_date').delete().eq('user_id', user.id)
-  }
-
-  return NextResponse.json({
-    deletedUploadId: uploadId,
-    deletedFileName: upload.original_file_name,
-    remainingUploads: remaining,
-    cleared: remaining === 0,
-  })
 }

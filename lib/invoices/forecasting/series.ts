@@ -1,4 +1,4 @@
-import { yearMonthKeyFromEngineMonthLabel } from '../analysis-summary'
+import { yearMonthKeyFromEngineMonthLabel } from '@/lib/premium-analysis/analysis-summary'
 import type { SpendObservation } from './types'
 
 type MonthlySpendRow = {

@@ -50,6 +50,11 @@ export interface InvoiceLine {
   charge_classification_code: string | null  // "FRT" | "ACC" etc.
   charge_category_code: string | null        // "INF" | "ICC" etc.
   package_quantity: number | null            // for Total Volume KPI
+  account_number?: string | null
+  billed_weight?: number | null
+  entered_weight?: number | null
+  transaction_date?: string | null
+  parse_version?: string | null
 }
 
 export interface AnalysisFilters {

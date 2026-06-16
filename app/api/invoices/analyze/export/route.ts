@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { computePremiumInvoiceAnalysis } from '@/lib/invoices/premium-analysis-compute'
-import { generatePremiumAnalysisExcel } from '@/lib/invoices/premium-analysis-exporter'
+import { computePremiumInvoiceAnalysis, generatePremiumAnalysisExcel } from '@/lib/premium-analysis'
 
 export const maxDuration = 120
 
@@ -37,6 +36,7 @@ export async function POST(request: Request) {
 
   const buffer = await generatePremiumAnalysisExcel({
     summary: summaryCore,
+    periodMatrix: summaryForDashboard.periodMatrix ?? null,
     appliedFilters: summaryForDashboard.appliedFilters ?? null,
     uploadsAnalyzed: uploadsCount,
     records,

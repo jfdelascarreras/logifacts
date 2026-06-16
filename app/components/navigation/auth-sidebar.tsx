@@ -10,9 +10,9 @@ import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
   { label: 'Home', href: '/home' },
-  { label: 'Upload Invoice', href: '/upload' },
   { label: 'Premium Analysis', href: '/premium-analysis' },
-  { label: 'Pricing', href: '/pricing' },
+  { label: 'Fuel Surcharges', href: '/fuel-surcharges' },
+  { label: 'LogiFacts Shipment Calculator', href: '/pricing' },
   { label: 'Join Panel', href: '/join-panel' },
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },

@@ -385,12 +385,24 @@ export function CostForecastCard({ monthlySpend, isFiltered }: Props) {
             )}
 
             {/* X-axis labels */}
-            {xLabels.map(({ period, x, i }) => (
-              <text key={i} x={x} y={MT + CH + 14}
-                textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.5}>
-                {shortMonth(period)}
-              </text>
-            ))}
+            {xLabels.map(({ period, x, i }) => {
+              const isFirst = i === 0
+              const isLast = i === xLabels.length - 1
+              return (
+                <text
+                  key={i}
+                  x={x}
+                  y={MT + CH + 14}
+                  textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                  fontSize={9}
+                  fill="currentColor"
+                  opacity={0.5}
+                >
+                  {shortMonth(period)}
+                  {period.length >= 4 && xLabels.length <= 12 ? ` '${period.slice(2, 4)}` : ''}
+                </text>
+              )
+            })}
 
             {/* Hover crosshair + dots */}
             {hoveredIdx !== null && allPoints[hoveredIdx] && (() => {

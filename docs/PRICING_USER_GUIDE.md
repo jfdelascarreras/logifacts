@@ -1,5 +1,7 @@
 # UPS Rate Calculator — User Guide
 
+> **Updated:** The live app at `/pricing` is the **multi-carrier Shipment Calculator** (UPS + FedEx). For the current user guide — including how contract discounts appear in results — see **[SHIPMENT_CALCULATOR_USER_GUIDE.md](./SHIPMENT_CALCULATOR_USER_GUIDE.md)**.
+
 Use the calculator at `/pricing` to get an estimated shipping cost before you hand a shipment to UPS. It reflects your negotiated contract rates, the current weekly fuel surcharge, and any accessorial charges that apply to the destination ZIP.
 
 ---

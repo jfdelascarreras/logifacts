@@ -18,7 +18,7 @@ const oswald = Oswald({
 });
 
 export const metadata: Metadata = {
-  title: "Logifacts",
+  title: "LogiFacts",
   description: "Insights <> Action <> Arrival",
   icons: {
     icon: "/favicon.ico",

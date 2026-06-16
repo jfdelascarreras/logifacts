@@ -4,6 +4,10 @@ This document describes **how invoice CSV data becomes dashboard totals** for **
 
 Use it to compare behavior with another tool or chat (Power BI, Python notebooks, etc.).
 
+**Accuracy audit:** [`PREMIUM_ANALYSIS_AUDIT.md`](./PREMIUM_ANALYSIS_AUDIT.md)  
+**Offline Python (canonical):** `python3 scripts/run_invoice_analysis.py --golden`  
+Requires `pandas`, `openpyxl`, `xlrd` (same as legacy scripts).
+
 ---
 
 ## Scope
@@ -20,8 +24,11 @@ Related architecture overview: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 | Step | File |
 |------|------|
 | HTTP handler | `app/api/invoices/analyze/route.ts` |
-| Orchestration (DB loads + preprocess + summary) | `lib/invoices/premium-analysis-compute.ts` |
-| Pure aggregation math | `lib/invoices/analysis-summary.ts` — **`computeInvoiceAnalysisSummary`** |
+| Public module entry | `lib/premium-analysis/index.ts` — import `@/lib/premium-analysis` |
+| Orchestration (DB loads + preprocess + summary) | `lib/premium-analysis/compute.ts` |
+| Carrier ingest adapters | `lib/premium-analysis/ingest-adapters/` |
+| Pure aggregation math | `lib/premium-analysis/analysis-summary.ts` — **`computeInvoiceAnalysisSummary`** |
+| Period matrix (avg spend / shipments) | `lib/premium-analysis/period-averages-matrix.ts` |
 | CSV parsing → `InvoiceRecord[]` | `lib/invoices/csv.ts` — **`parseInvoiceCsvDocument`**, **`toNumber`**, etc. |
 
 ---
@@ -33,7 +40,7 @@ High-level flow inside **`computePremiumInvoiceAnalysis`**:
 1. **Load** up to **200** `invoice_uploads` for the user (newest first): metadata only (`id`, `created_at`, `content_sha256`) in one query — **no `csv_text` yet** (fetching csv_text for 50+ files in a single query exceeds Supabase's statement timeout). Then fetch `csv_text` in **batches of 10** (`CSV_FETCH_BATCH = 10`) using `.in('id', batchIds)`.
 2. **Backfill** missing `content_sha256` from `csv_text` and persist (so dedupe is stable).
 3. **Dedupe uploads by hash:** `dedupeInvoiceUploadRowsBySha256` keeps first occurrence per `content_sha256` (same binary content only counted once). Count reported as **`ingestDiagnostics.duplicateUploadRowsSkipped`**.
-4. **Parse cache (optional):** if unchanged fingerprint + same profile company name, reuse **`fullRecords`** + **`ingestDiagnostics`** from `lib/invoices/analyze-parse-cache.ts`.
+4. **Parse cache (optional):** if unchanged fingerprint + same profile company name, reuse **`fullRecords`** + **`ingestDiagnostics`** from `lib/premium-analysis/analyze-parse-cache.ts`.
 5. **Parse each deduped CSV:** `parseInvoiceCsvDocument` → `records`; accumulate **`rowsDroppedCriticalSciCorruption`** from identifier sanity checks inside CSV parsing/finalization.
 6. **Club Colors filter:** `filterRowsLikeClubColorsPowerQuery` drops rows where **`Invoice Date`** is empty or the literal header string `"Invoice Date"` (embedded header rows).
 7. **Dedupe charge lines:** `dedupeInvoiceRecordsStableOrder` (stable order, key-based duplicate merge). Drops counted in **`ingestDiagnostics.duplicateChargeRowsDropped`**.
@@ -87,7 +94,7 @@ If there is **no** mapping, those strings are empty; **`category2` label** for r
 |--------------|------|
 | **`Carrier`** | `rec['Carrier Name']` or `'Unknown'` (display bucket; mapping resolver defaults blank carrier name to **`UPS`**) |
 | **Service** | `Original Service Description` trim, else `Charge Category Code` trim, else `'Unknown'` |
-| **Mode** | `modeFromZone(zone)` from numeric **Zone** (Ground, Air, Express/Special, international bands, etc.) — see `lib/invoices/analysis-summary.ts`. |
+| **Mode** | `modeFromZone(zone)` from numeric **Zone** (Ground, Air, Express/Special, international bands, etc.) — see `lib/premium-analysis/analysis-summary.ts`. |
 | **Weight bucket** | `weightBucketFromLbs(billedWeight)` |
 | **Date key** | `parseInvoiceDateKey('Invoice Date')` → `YYYY-MM-DD` or `null` if unparseable |
 | **Account dim** | Trimmed **`Account Number`**, or **`(no account)`** |
@@ -169,6 +176,24 @@ When **no** active filters, all preprocessed **`fullRecords`** are summarized.
 
 ---
 
+## AGENTS Invoices outputs (`lib/premium-analysis/agents-outputs.ts`)
+
+After `computeInvoiceAnalysisSummary`, **`enrichSummaryWithAgentsOutputs`** adds methodology-aligned blocks from [AGENTS Invoices.md](../AGENTS%20Invoices.md):
+
+| Module | Output |
+|--------|--------|
+| `spec-categories.ts` | AGENTS charge categories (`BASE_FREIGHT`, `FUEL`, …) from `standardized_charge` + taxonomy |
+| `carrier-mix.ts` | Shipments and avg cost by carrier × service × zone mode |
+| `trend-flags.ts` | Months >20% above 3-month rolling average |
+| `anomaly-detection.ts` | Eight universal flags (fuel/EIA, accessorial rate, address correction, …) |
+| `contract-compliance.ts` | UPS `Incentive Amount` vs profile `contract_discounts` |
+| `savings-estimator.ts` | Annualized low/high savings range |
+| `action-prioritization.ts` | Ranked actions (top 3 executable) |
+
+Persisted on `invoice_upload_analyses.summary` JSON and shown in **Agents findings** on the Premium Analysis dashboard.
+
+---
+
 ## Outputs attached only in Premium dashboard flow
 
 | Field | Meaning |
@@ -182,13 +207,17 @@ When **no** active filters, all preprocessed **`fullRecords`** are summarized.
 ## Files quick reference
 
 ```
-app/api/invoices/analyze/route.ts     → triggers compute, persists summary JSON
-lib/invoices/premium-analysis-compute.ts → orchestration + ingest diagnostics + cache
-lib/invoices/csv.ts                   → CSV → InvoiceRecord, Club Colors filter, numbers
-lib/invoices/analysis-summary.ts      → computeInvoiceAnalysisSummary + filters + helpers
-lib/invoices/mapping.ts                 → master_mapping join for multipart upload ingest (same taxonomy source as Premium Analysis)
-lib/invoices/excel-master-mapping.ts    → workbook → seed rows (not on analyze hot path)
-supabase/seed.ts                        → upsert master_mapping
+app/api/invoices/analyze/route.ts          → triggers compute, persists summary JSON
+lib/premium-analysis/index.ts            → public entry (@/lib/premium-analysis)
+lib/premium-analysis/compute.ts          → orchestration + filters + summary assembly
+lib/premium-analysis/ingest-adapters/    → UPS CSV + FedEx/WWE multipart → InvoiceRecord[]
+lib/premium-analysis/analysis-summary.ts → computeInvoiceAnalysisSummary + filters + helpers
+lib/premium-analysis/period-averages-matrix.ts → year / month / ISO week matrices
+lib/premium-analysis/analyze-parse-cache.ts    → in-memory UPS parse cache
+lib/invoices/csv.ts                      → CSV → InvoiceRecord, Club Colors filter, numbers
+lib/invoices/mapping.ts                  → master_mapping join for multipart upload ingest
+lib/invoices/excel-master-mapping.ts     → workbook → seed rows (not on analyze hot path)
+supabase/seed.ts                         → upsert master_mapping
 ```
 
 ---

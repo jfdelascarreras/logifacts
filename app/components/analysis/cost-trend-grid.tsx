@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -170,27 +170,86 @@ function deltaText(current: number, previous: number): string {
   return `${sign}${formatCompact(diff)}`
 }
 
-function formatMonthYear(dateStr: string, compact: boolean): string {
+type MonthAxisTick = { label: string; leftPct: number; monthKey: string }
+
+function formatMonthYear(dateStr: string, showYear: boolean): string {
   const dt = new Date(`${dateStr}T00:00:00Z`)
-  if (compact) {
-    return dt.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
+  if (showYear) {
+    return dt.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
   }
-  return dt.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return dt.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
 }
 
-function pickEvenlySpacedMonthTicks<T extends { idx: number }>(ticks: T[], maxLabels: number): T[] {
-  if (ticks.length <= maxLabels) return ticks
-  const n = ticks.length
-  const want = Math.min(maxLabels, n)
-  const positions = new Set<number>()
-  positions.add(0)
-  positions.add(n - 1)
-  const inner = Math.max(0, want - 2)
-  for (let j = 1; j <= inner; j += 1) {
-    const i = Math.round((j / (inner + 1)) * (n - 1))
-    positions.add(Math.min(n - 1, Math.max(0, i)))
+/** One label per calendar month, centered on that month's span in the daily series. */
+function buildMonthAxisTicks(dates: string[], maxLabels: number): MonthAxisTick[] {
+  if (!dates.length) return []
+
+  const monthSpans = new Map<string, { first: number; last: number }>()
+  for (let i = 0; i < dates.length; i += 1) {
+    const monthKey = dates[i]!.slice(0, 7)
+    const span = monthSpans.get(monthKey)
+    if (!span) monthSpans.set(monthKey, { first: i, last: i })
+    else span.last = i
   }
-  return [...positions].sort((a, b) => a - b).map((i) => ticks[i])
+
+  const monthKeys = [...monthSpans.keys()].sort()
+  const years = new Set(monthKeys.map((k) => k.slice(0, 4)))
+  const showYear = years.size > 1 || monthKeys.length <= 10
+
+  const denom = Math.max(1, dates.length - 1)
+  const raw: MonthAxisTick[] = monthKeys.map((monthKey) => {
+    const span = monthSpans.get(monthKey)!
+    const centerIdx = (span.first + span.last) / 2
+    return {
+      monthKey,
+      label: formatMonthYear(`${monthKey}-01`, showYear),
+      leftPct: (centerIdx / denom) * 100,
+    }
+  })
+
+  return pickMonthTicksWithMinSpacing(raw, maxLabels, 9)
+}
+
+function pickMonthTicksWithMinSpacing(
+  ticks: MonthAxisTick[],
+  maxLabels: number,
+  minSpacingPct: number
+): MonthAxisTick[] {
+  if (ticks.length <= 1) return ticks
+
+  const tryAdd = (out: MonthAxisTick[], candidate: MonthAxisTick) => {
+    if (out.some((t) => Math.abs(t.leftPct - candidate.leftPct) < minSpacingPct)) return
+    out.push(candidate)
+  }
+
+  const picked: MonthAxisTick[] = []
+  tryAdd(picked, ticks[0]!)
+  tryAdd(picked, ticks[ticks.length - 1]!)
+
+  if (ticks.length <= maxLabels) {
+    for (const t of ticks.slice(1, -1)) tryAdd(picked, t)
+    return picked.sort((a, b) => a.leftPct - b.leftPct)
+  }
+
+  const middle = ticks.slice(1, -1)
+  const slots = Math.max(0, maxLabels - picked.length)
+  const step = Math.max(1, Math.ceil(middle.length / Math.max(1, slots)))
+  for (let i = 0; i < middle.length; i += step) tryAdd(picked, middle[i]!)
+
+  return picked.sort((a, b) => a.leftPct - b.leftPct)
+}
+
+function monthTickLabelClass(leftPct: number, index: number, total: number): string {
+  const base = 'absolute whitespace-nowrap'
+  if (index === 0 && leftPct <= 8) return `${base} left-0`
+  if (index === total - 1 && leftPct >= 92) return `${base} right-0`
+  return `${base} -translate-x-1/2`
+}
+
+function monthTickLabelStyle(leftPct: number, index: number, total: number): CSSProperties {
+  if (index === 0 && leftPct <= 8) return { left: 0 }
+  if (index === total - 1 && leftPct >= 92) return { right: 0 }
+  return { left: `${leftPct}%` }
 }
 
 function formatCurrency(value: number): string {
@@ -245,22 +304,7 @@ function Sparkline({
     })
     .join(' ')
 
-  const monthTickByLabel = new Map<string, number>()
-  for (let i = 0; i < dates.length; i += 1) {
-    const date = dates[i]
-    const monthKey = date.slice(0, 7)
-    if (!monthTickByLabel.has(monthKey)) {
-      monthTickByLabel.set(monthKey, i)
-    }
-  }
-  const labelCompact = dates.length > 90 || monthTickByLabel.size > 10
-  const monthTicksRaw = Array.from(monthTickByLabel.entries()).map(([monthKey, idx]) => ({
-    label: formatMonthYear(`${monthKey}-01`, labelCompact),
-    idx,
-    leftPct: (idx / Math.max(1, dates.length - 1)) * 100,
-  }))
-  const monthTicks =
-    monthTicksRaw.length > 1 ? pickEvenlySpacedMonthTicks(monthTicksRaw, 7) : monthTicksRaw
+  const monthTicks = buildMonthAxisTicks(dates, 7)
 
   const hoveredPoint = hoveredIdx !== null ? points[hoveredIdx] : null
   const hoveredDate = hoveredIdx !== null ? dates[hoveredIdx] : null
@@ -336,12 +380,12 @@ function Sparkline({
           </>
         ) : null}
       </svg>
-      <div className="relative mt-1 h-6 text-[11px] leading-tight text-muted-foreground">
-        {monthTicks.map((tick) => (
+      <div className="relative mt-1 h-6 overflow-hidden px-0.5 text-[11px] leading-tight text-muted-foreground">
+        {monthTicks.map((tick, i) => (
           <span
-            key={`${tick.label}-${tick.idx}-${tick.leftPct.toFixed(2)}`}
-            className="absolute -translate-x-1/2 whitespace-nowrap"
-            style={{ left: `${tick.leftPct}%` }}
+            key={tick.monthKey}
+            className={monthTickLabelClass(tick.leftPct, i, monthTicks.length)}
+            style={monthTickLabelStyle(tick.leftPct, i, monthTicks.length)}
           >
             {tick.label}
           </span>

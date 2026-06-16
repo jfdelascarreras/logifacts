@@ -358,6 +358,7 @@ export function UPSQuoteForm({ defaultOriginZip = '' }: Props) {
       {result && (
         <RateResult
           breakdown={result}
+          carrier="ups"
           markupPct={markupPct ? parseFloat(markupPct) : undefined}
         />
       )}

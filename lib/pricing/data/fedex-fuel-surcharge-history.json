@@ -1,0 +1,17 @@
+[
+  { "effectiveDate": "2026-06-15", "ground": 0.2600, "express": 0.2700 },
+  { "effectiveDate": "2026-06-08", "ground": 0.2650, "express": 0.2650 },
+  { "effectiveDate": "2026-06-01", "ground": 0.2675, "express": 0.3075 },
+  { "effectiveDate": "2026-05-25", "ground": 0.2700, "express": 0.3075 },
+  { "effectiveDate": "2026-05-18", "ground": 0.2700, "express": 0.3075 },
+  { "effectiveDate": "2026-05-11", "ground": 0.2725, "express": 0.3100 },
+  { "effectiveDate": "2026-05-04", "ground": 0.2650, "express": 0.3025 },
+  { "effectiveDate": "2026-04-27", "ground": 0.2625, "express": 0.2975 },
+  { "effectiveDate": "2026-04-20", "ground": 0.2700, "express": 0.3025 },
+  { "effectiveDate": "2026-04-13", "ground": 0.2725, "express": 0.3050 },
+  { "effectiveDate": "2026-04-06", "ground": 0.2650, "express": 0.3050 },
+  { "effectiveDate": "2026-03-30", "ground": 0.2650, "express": 0.3050 },
+  { "effectiveDate": "2026-03-23", "ground": 0.2600, "express": 0.3000 },
+  { "effectiveDate": "2026-03-16", "ground": 0.2575, "express": 0.2975 },
+  { "effectiveDate": "2026-03-09", "ground": 0.2550, "express": 0.2950 }
+]

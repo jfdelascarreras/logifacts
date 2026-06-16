@@ -128,14 +128,14 @@ describe('estimateUPS — rate calculation', () => {
     expect(b.publishedRate).toBe(18.65)
     expect(b.contractDiscounts.transportation).toBe(0)
     expect(b.netTransportationCharge).toBeCloseTo(18.65, 2)
-    // fuel surcharge rate = domesticGround from most recent history entry (0.275)
-    expect(b.fuelSurchargeRate).toBe(0.275)
-    expect(b.fuelSurcharge).toBeCloseTo(18.65 * 0.275, 2)
+    // fuel surcharge rate = domesticGround from most recent history entry (0.265)
+    expect(b.fuelSurchargeRate).toBe(0.265)
+    expect(b.fuelSurcharge).toBeCloseTo(18.65 * 0.265, 2)
     expect(b.residentialSurcharge).toBe(0)
     // 10001 = das_standard → groundCommercial $4.50
     expect(b.dasSurchargeType).toBe('standard')
     expect(b.dasSurcharge).toBe(4.50)
-    expect(b.totalEstimatedCharge).toBeCloseTo(18.65 * 1.275 + 4.50, 2)
+    expect(b.totalEstimatedCharge).toBeCloseTo(18.65 * 1.265 + 4.50, 2)
   })
 
   it('applies contract discount correctly', () => {
@@ -146,8 +146,8 @@ describe('estimateUPS — rate calculation', () => {
     const b = r.breakdown
     expect(b.contractDiscounts.transportation).toBe(0.56)
     expect(b.netTransportationCharge).toBeCloseTo(8.206, 2)
-    expect(b.fuelSurcharge).toBeCloseTo(8.206 * 0.275, 2)
-    expect(b.totalEstimatedCharge).toBeCloseTo(8.206 * 1.275 + 4.50, 2)
+    expect(b.fuelSurcharge).toBeCloseTo(8.206 * 0.265, 2)
+    expect(b.totalEstimatedCharge).toBeCloseTo(8.206 * 1.265 + 4.50, 2)
   })
 
   it('caps discount at 95%', () => {

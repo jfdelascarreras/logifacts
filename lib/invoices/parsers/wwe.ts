@@ -57,6 +57,8 @@ export function parseWWEWorksheet(ws: ExcelJS.Worksheet | undefined): WWEWorkshe
         zone: zone || undefined,
         destination_state: receiverState || undefined,
         service_level: serviceLevel || undefined,
+        tracking_id: airbill || undefined,
+        package_quantity: /^1Z[A-Z0-9]/i.test(airbill) ? 1 : undefined,
       })
     }
   })

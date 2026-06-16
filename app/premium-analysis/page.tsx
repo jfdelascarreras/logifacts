@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { AuthenticatedShell } from '@/app/components/navigation/authenticated-shell'
 import { PremiumDashboard } from '@/app/components/analysis/premium-dashboard'
 import { InvoiceUploadPanel } from '@/app/components/invoices/invoice-upload-panel'
+import { InvoicesUploadedManager } from '@/app/components/invoices/invoices-uploaded-manager'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function PremiumAnalysisPage() {
@@ -20,17 +21,20 @@ export default async function PremiumAnalysisPage() {
       title="Premium Analysis"
       subtitle={`Signed in as ${user.email ?? 'your account'}`}
     >
-      <div className="space-y-8">
+      <div className="space-y-8 rounded-2xl bg-muted/40 p-6">
         <section
           id="premium-invoice-upload"
           className="scroll-mt-24 bg-background pb-2"
           aria-label="Invoice upload"
         >
-          <div className="mx-auto w-full max-w-3xl">
+          <div className="mx-auto w-full max-w-3xl space-y-6">
             <InvoiceUploadPanel />
           </div>
         </section>
         <PremiumDashboard />
+        <div className="mx-auto w-full max-w-3xl">
+          <InvoicesUploadedManager />
+        </div>
       </div>
     </AuthenticatedShell>
   )

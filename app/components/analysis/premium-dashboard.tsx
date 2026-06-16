@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
 import { ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react'
@@ -18,7 +18,13 @@ import { CostForecastCard } from '@/app/components/analysis/cost-forecast-card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
 import { MomWaterfall } from '@/app/components/analysis/mom-waterfall'
 import { CreativeVisualsGrid } from '@/app/components/analysis/creative-visuals-grid'
+import { AgentsFindingsPanel } from '@/app/components/analysis/agents-findings-panel'
+import { DataHealthCard } from '@/app/components/analysis/data-health-card'
+import { IngestAlertsCard } from '@/app/components/analysis/ingest-alerts-card'
+import { SpendShipmentPeriodMatrixCard } from '@/app/components/analysis/spend-shipment-period-matrix'
+import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
+import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
 import {
   hasActiveInvoiceFilters,
   isInvoiceYearMonthKey,
@@ -26,8 +32,8 @@ import {
   normalizedMonthNumbers,
   type InvoiceAnalysisFilterMeta,
   type InvoiceAnalysisFilters,
-} from '@/lib/invoices/analysis-summary'
-import { identifierLooksScientificNotationCorrupted } from '@/lib/invoices/identifier-safety'
+} from '@/lib/premium-analysis/analysis-summary'
+import type { SpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
 import { cn } from '@/lib/utils'
 
 type Measures = {
@@ -97,11 +103,18 @@ type Summary = {
   spendByCarrier?: Array<{ carrier: string; totalCost: number }>
   filterMeta?: InvoiceAnalysisFilterMeta
   appliedFilters?: InvoiceAnalysisFilters
-  ingestDiagnostics?: {
-    duplicateUploadRowsSkipped: number
-    duplicateChargeRowsDropped: number
-    rowsDroppedCriticalSciCorruption: number
-  }
+  ingestDiagnostics?: PremiumParseIngestDiagnostics
+  periodMatrix?: SpendShipmentPeriodMatrix
+  specCategories?: import('@/lib/premium-analysis/spec-categories').SpecCategoriesSummary
+  carrierMix?: import('@/lib/premium-analysis/agents-types').CarrierMixRow[]
+  anomalyFlags?: import('@/lib/premium-analysis/agents-types').AnomalyFlag[]
+  savingsEstimate?: import('@/lib/premium-analysis/agents-types').SavingsEstimate
+  actionItems?: import('@/lib/premium-analysis/agents-types').ActionItem[]
+  datasetFlags?: import('@/lib/premium-analysis/agents-types').DatasetFlags
+  ingestQuality?: import('@/lib/premium-analysis/ingest-quality').IngestQualityGate
+  ingestSource?: 'invoice_rows' | 'legacy'
+  staleIngest?: import('@/lib/premium-analysis/stale-ingest').StaleIngestAlert
+  runRegression?: import('@/lib/premium-analysis/analysis-regression').RunRegression
 }
 
 type AnalysisHistoryItem = {
@@ -109,6 +122,56 @@ type AnalysisHistoryItem = {
   invoice_upload_id: string
   updated_at: string
   summary: Summary & Record<string, unknown>
+}
+
+// ─── Sparkline ───────────────────────────────────────────────────────────────
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  if (data.length < 2) return null
+  const W = 96, H = 40
+  const min = Math.min(...data), max = Math.max(...data)
+  const range = max - min || 1
+  const pts = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * W,
+    y: H - 4 - ((v - min) / range) * (H - 12),
+  }))
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const fill = `${line} L${pts.at(-1)!.x.toFixed(1)} ${H} L0 ${H}Z`
+  const last = pts.at(-1)!
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 self-center">
+      <path d={fill} fill={color} opacity={0.07} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+      <circle cx={last.x} cy={last.y} r={2.5} fill={color} opacity={0.9} />
+    </svg>
+  )
+}
+
+// ─── MetricCard ───────────────────────────────────────────────────────────────
+
+function MetricCard({
+  label, value, sub, sparkData, sparkColor,
+}: {
+  label: string
+  value: string
+  sub?: string
+  sparkData?: number[]
+  sparkColor?: string
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-5 py-4">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+          {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+        </div>
+        {sparkData && sparkData.length >= 2 && sparkColor && (
+          <Sparkline data={sparkData} color={sparkColor} />
+        )}
+      </div>
+    </div>
+  )
 }
 
 const emptyFilterMeta: InvoiceAnalysisFilterMeta = {
@@ -168,10 +231,14 @@ export function PremiumDashboard() {
   const [loadingCached, setLoadingCached] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null)
   /** True when KPIs come from saved DB row, not a fresh POST */
   const [fromCache, setFromCache] = useState(false)
   const [invoicesExpanded, setInvoicesExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'analysis' | 'forecast'>('analysis')
+  /** Files in Invoices Uploaded — used to avoid "no analysis" when data exists. */
+  const [storedUploadCount, setStoredUploadCount] = useState(0)
+  const autoAnalyzeOnce = useRef(false)
 
   const loadHistory = useCallback(async (): Promise<AnalysisHistoryItem[]> => {
     const res = await fetch('/api/invoices/analyze', { method: 'GET', cache: 'no-store' })
@@ -227,18 +294,58 @@ export function PremiumDashboard() {
     let ingestDiagnostics: Summary['ingestDiagnostics'] = undefined
     if (ingestRaw && typeof ingestRaw === 'object') {
       const ig = ingestRaw as Record<string, unknown>
-      const dupUp = ig.duplicateUploadRowsSkipped ?? ig.duplicate_upload_rows_skipped
-      const dupCh = ig.duplicateChargeRowsDropped ?? ig.duplicate_charge_rows_dropped
-      const sci = ig.rowsDroppedCriticalSciCorruption ?? ig.rows_dropped_critical_sci_corruption
+      const num = (k: string, snake: string) => {
+        const v = ig[k] ?? ig[snake]
+        return typeof v === 'number' ? v : undefined
+      }
+      const dupUp = num('duplicateUploadRowsSkipped', 'duplicate_upload_rows_skipped')
+      const dupCh = num('duplicateChargeRowsDropped', 'duplicate_charge_rows_dropped')
+      const sci = num('rowsDroppedCriticalSciCorruption', 'rows_dropped_critical_sci_corruption')
+      const linesTotal = num('linesTotal', 'lines_total')
+      const linesMapped = num('linesMapped', 'lines_mapped')
+      const unmappedSpend = num('unmappedSpend', 'unmapped_spend')
+      const shipmentsTotal = num('shipmentsTotal', 'shipments_total')
+      const shipmentsWithoutTracking = num('shipmentsWithoutTracking', 'shipments_without_tracking')
+      const linesMissingShipDate = num('linesMissingShipDate', 'lines_missing_ship_date')
+      const parseVersionsRaw = ig.parseVersions ?? ig.parse_versions
+      const parseVersions = Array.isArray(parseVersionsRaw)
+        ? parseVersionsRaw.filter((v): v is string => typeof v === 'string')
+        : []
       if (
-        typeof dupUp === 'number' &&
-        typeof dupCh === 'number' &&
-        typeof sci === 'number'
+        dupUp != null &&
+        dupCh != null &&
+        sci != null &&
+        linesTotal != null &&
+        linesMapped != null &&
+        unmappedSpend != null &&
+        shipmentsTotal != null &&
+        shipmentsWithoutTracking != null &&
+        linesMissingShipDate != null
       ) {
         ingestDiagnostics = {
           duplicateUploadRowsSkipped: dupUp,
           duplicateChargeRowsDropped: dupCh,
           rowsDroppedCriticalSciCorruption: sci,
+          linesTotal,
+          linesMapped,
+          unmappedSpend,
+          shipmentsTotal,
+          shipmentsWithoutTracking,
+          linesMissingShipDate,
+          parseVersions,
+        }
+      } else if (dupUp != null && dupCh != null && sci != null) {
+        ingestDiagnostics = {
+          duplicateUploadRowsSkipped: dupUp,
+          duplicateChargeRowsDropped: dupCh,
+          rowsDroppedCriticalSciCorruption: sci,
+          linesTotal: 0,
+          linesMapped: 0,
+          unmappedSpend: 0,
+          shipmentsTotal: 0,
+          shipmentsWithoutTracking: 0,
+          linesMissingShipDate: 0,
+          parseVersions: [],
         }
       }
     }
@@ -273,6 +380,8 @@ export function PremiumDashboard() {
             .sort((a, b) => b.totalCost - a.totalCost)
         : undefined
 
+    const periodMatrix = (raw.periodMatrix ?? r.period_matrix) as SpendShipmentPeriodMatrix | undefined
+
     setSummary({
       totalRows: Number(raw.totalRows ?? r.total_rows ?? 0),
       measures: raw.measures,
@@ -299,14 +408,34 @@ export function PremiumDashboard() {
       filterMeta: mergedFilterMeta,
       appliedFilters: applied,
       ingestDiagnostics,
+      periodMatrix,
+      specCategories: (raw.specCategories ?? r.spec_categories) as Summary['specCategories'],
+      carrierMix: (raw.carrierMix ?? r.carrier_mix) as Summary['carrierMix'],
+      anomalyFlags: (raw.anomalyFlags ?? r.anomaly_flags) as Summary['anomalyFlags'],
+      savingsEstimate: (raw.savingsEstimate ?? r.savings_estimate) as Summary['savingsEstimate'],
+      actionItems: (raw.actionItems ?? r.action_items) as Summary['actionItems'],
+      datasetFlags: (raw.datasetFlags ?? r.dataset_flags) as Summary['datasetFlags'],
+      ingestQuality: (raw.ingestQuality ?? r.ingest_quality) as Summary['ingestQuality'],
+      ingestSource: (raw.ingestSource ?? r.ingest_source) as Summary['ingestSource'],
+      staleIngest: (raw.staleIngest ?? r.stale_ingest) as Summary['staleIngest'],
+      runRegression: (raw.runRegression ?? r.run_regression) as Summary['runRegression'],
     })
   }, [])
 
   const loadCachedSummary = useCallback(async () => {
     setLoadingCached(true)
     setError(null)
+    setRefreshWarning(null)
     try {
-      const list = await loadHistory()
+      const [list, uploadsRes] = await Promise.all([
+        loadHistory(),
+        fetch('/api/invoices/uploads', { cache: 'no-store' }).then(
+          (r) => r.json() as Promise<{ uploads?: unknown[] }>
+        ),
+      ])
+      const uploadCount = uploadsRes.uploads?.length ?? 0
+      setStoredUploadCount(uploadCount)
+
       const latest = list[0]
       if (latest?.summary?.measures) {
         applySummaryPayload(latest.summary as Summary & Record<string, unknown>, {
@@ -331,6 +460,7 @@ export function PremiumDashboard() {
     setRefreshing(true)
     setAnalysisPostIntent(intent)
     setError(null)
+    setRefreshWarning(null)
     try {
       const res = await fetch('/api/invoices/analyze', {
         method: 'POST',
@@ -347,10 +477,18 @@ export function PremiumDashboard() {
           hydrateFiltersFromApplied: hasActiveInvoiceFilters(filters),
         })
         setFromCache(false)
+        setRefreshWarning(null)
       }
       await loadHistory()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to refresh analysis.')
+      const msg = e instanceof Error ? e.message : 'Failed to refresh analysis.'
+      if (summary?.measures) {
+        setRefreshWarning(msg)
+        setError(null)
+      } else {
+        setError(msg)
+        setRefreshWarning(null)
+      }
     } finally {
       setRefreshing(false)
       setAnalysisPostIntent('idle')
@@ -434,6 +572,13 @@ export function PremiumDashboard() {
   useEffect(() => {
     void loadCachedSummary()
   }, [loadCachedSummary])
+
+  /** Uploaded files exist but no saved summary — run one combined analysis automatically. */
+  useEffect(() => {
+    if (loadingCached || summary || storedUploadCount === 0 || autoAnalyzeOnce.current) return
+    autoAnalyzeOnce.current = true
+    void postAnalysis(undefined, 'full-refresh')
+  }, [loadingCached, summary, storedUploadCount])
 
   /** After upload, the CSV card runs POST /analyze and dispatches this — update dashboard without a second click. */
   useEffect(() => {
@@ -538,7 +683,7 @@ export function PremiumDashboard() {
             </p>
             {fromCache && summary ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                Showing your last saved analysis from the server. New uploads trigger analysis automatically; use{' '}
+                Showing your last saved analysis from the server. Multi-file uploads run one combined analysis at the end; use{' '}
                 <span className="font-medium text-foreground">Refresh analysis</span> for a manual full recompute when
                 you need it.
               </p>
@@ -583,25 +728,40 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
-        {summary?.ingestDiagnostics && summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption > 0 ? (
-          <Card className="border-amber-500/40 bg-amber-500/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base text-foreground">Rows excluded</CardTitle>
-              <CardDescription className="text-foreground/80">
-                Some charge lines were not included because key fields matched a scientific-notation corruption
-                pattern. Compare totals to your source file; if spreadsheets edited the CSV, format identifier columns as
-                text before export.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-foreground">
-              <p>
-                Rows excluded:{' '}
-                <span className="font-medium tabular-nums">
-                  {summary.ingestDiagnostics.rowsDroppedCriticalSciCorruption}
-                </span>
-              </p>
-            </CardContent>
-          </Card>
+        {refreshWarning ? (
+          <div
+            role="status"
+            className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+          >
+            <p>
+              <span className="font-medium">Refresh did not complete.</span> Showing your last saved analysis.{' '}
+              {refreshWarning}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0 h-7 px-2 text-amber-950 hover:bg-amber-500/20 dark:text-amber-100"
+              onClick={() => setRefreshWarning(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        ) : null}
+
+        {summary?.ingestDiagnostics ? (
+          <DataHealthCard
+            diagnostics={summary.ingestDiagnostics}
+            totalCost={measures?.totalCost}
+          />
+        ) : null}
+
+        {summary ? (
+          <IngestAlertsCard
+            ingestSource={summary.ingestSource}
+            staleIngest={summary.staleIngest}
+            runRegression={summary.runRegression}
+          />
         ) : null}
 
         {summary && measures ? (
@@ -814,114 +974,69 @@ export function PremiumDashboard() {
           </div>
         ) : null}
 
-        {!loadingCached && !summary && !error ? (
+        {!loadingCached && !summary && !error && !refreshing ? (
           <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-            <p>
-              No saved analysis yet.{' '}
-              <a
-                href="#premium-invoice-upload"
-                className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-              >
-                Upload invoice CSV files
-              </a>{' '}
-              above — we analyze automatically after each successful upload. If you already have uploads but no
-              analysis row, use{' '}
-              <span className="font-medium text-foreground">Refresh analysis</span> at the top to recompute manually.
-            </p>
+            {storedUploadCount > 0 ? (
+              <p>
+                You have {storedUploadCount} uploaded file{storedUploadCount !== 1 ? 's' : ''} in{' '}
+                <span className="font-medium text-foreground">Invoices Uploaded</span> below, but no saved combined
+                analysis yet. Use{' '}
+                <span className="font-medium text-foreground">Refresh analysis</span> to aggregate your full dataset.
+              </p>
+            ) : (
+              <p>
+                No invoice files yet.{' '}
+                <a
+                  href="#premium-invoice-upload"
+                  className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                >
+                  Upload invoices
+                </a>{' '}
+                above (UPS CSV or FedEx/WWE Excel) — we run one combined Premium Analysis after all files in a batch finish uploading.
+              </p>
+            )}
           </div>
         ) : null}
 
         {activeTab === 'analysis' && <>
 
         {summary && measures ? (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Total Cost</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.totalCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Total Packages</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.totalPackages.toLocaleString()}
-                </div>
-                {typeof measures.packageDedupeShipmentCount === 'number' ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Distinct shipments in package total:{' '}
-                    {measures.packageDedupeShipmentCount.toLocaleString()}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Fuel Cost</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.fuelCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Cost – Surcharges</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.costSurcharges.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Cost – Accessorials</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {(measures.costAccessorials ?? 0).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <CardHeader>
-                <CardTitle>Weight Gap</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold text-foreground">
-                  {measures.weightGap.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <MetricCard
+              label="Total Cost"
+              value={measures.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.totalCost)}
+              sparkColor="#6366F1"
+            />
+            <MetricCard
+              label="Total Packages"
+              value={measures.totalPackages.toLocaleString()}
+              sub={typeof measures.packageDedupeShipmentCount === 'number'
+                ? `${measures.packageDedupeShipmentCount.toLocaleString()} distinct shipments`
+                : undefined}
+            />
+            <MetricCard
+              label="Fuel Cost"
+              value={measures.fuelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costFuel ?? 0)}
+              sparkColor="#F59E0B"
+            />
+            <MetricCard
+              label="Cost — Surcharges"
+              value={measures.costSurcharges.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costSurcharges ?? 0)}
+              sparkColor="#3B82F6"
+            />
+            <MetricCard
+              label="Cost — Accessorials"
+              value={(measures.costAccessorials ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              sparkData={summary.monthlySpend?.map(m => m.costAccessorials ?? 0)}
+              sparkColor="#8B5CF6"
+            />
+            <MetricCard
+              label="Weight Gap"
+              value={measures.weightGap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            />
           </div>
         ) : null}
 
@@ -1124,13 +1239,15 @@ export function PremiumDashboard() {
           </Card>
         ) : null}
 
-        {history[0]?.summary?.monthlySpend && history[0].summary.monthlySpend.length >= 2 ? (
-          <MomWaterfall
-            monthlySpend={history[0].summary.monthlySpend}
-            filterYear={filterYear}
-            filterMonths={filterMonths}
-          />
-        ) : null}
+        {(() => {
+          // Prefer the current (possibly filtered) view when it has 2+ months so the
+          // waterfall respects account filters. Fall back to the saved full-dataset
+          // analysis only when the current summary is narrowed to a single month.
+          const cur = summary?.monthlySpend
+          const hist = history[0]?.summary?.monthlySpend
+          const wm = cur && cur.length >= 2 ? cur : hist && hist.length >= 2 ? hist : null
+          return wm ? <MomWaterfall monthlySpend={wm} /> : null
+        })()}
 
         {detailByInvoice && summary?.spendByInvoice?.length ? (
           <Card className="border-accent/25 bg-card">
@@ -1227,103 +1344,22 @@ export function PremiumDashboard() {
 
         {summary?.dailySpend?.length ? <CostTrendGrid dailySpend={summary.dailySpend} /> : null}
 
-        {summary?.category2VolumeCpp?.length &&
-        summary?.modeVolumeCpp?.length &&
-        summary?.weightBucketVolume?.length ? (
+        {summary?.periodMatrix?.years?.length ? (
+          <SpendShipmentPeriodMatrixCard matrix={summary.periodMatrix} />
+        ) : null}
+
+        <AgentsFindingsPanel summary={summary} />
+
+        {(summary?.category2VolumeCpp?.length ||
+          summary?.modeVolumeCpp?.length ||
+          summary?.weightBucketVolume?.length) ? (
           <CreativeVisualsGrid
-            category2VolumeCpp={summary.category2VolumeCpp}
-            modeVolumeCpp={summary.modeVolumeCpp}
-            weightBucketVolume={summary.weightBucketVolume}
+            category2VolumeCpp={summary.category2VolumeCpp ?? []}
+            modeVolumeCpp={summary.modeVolumeCpp ?? []}
+            weightBucketVolume={summary.weightBucketVolume ?? []}
           />
         ) : null}
 
-        {(() => {
-          const latestInvoices = history[0]?.summary?.spendByInvoice
-          if (!Array.isArray(latestInvoices) || latestInvoices.length === 0) return null
-          return (
-            <Card className="border-accent/25 bg-card">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Invoices Analyzed</CardTitle>
-                    <CardDescription>
-                      {latestInvoices.length.toLocaleString()} invoice{latestInvoices.length !== 1 ? 's' : ''} · total{' '}
-                      <span className="font-medium text-foreground">
-                        ${latestInvoices.reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {' · '}{new Date(history[0].updated_at).toLocaleString()}
-                    </CardDescription>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setInvoicesExpanded(v => !v)}
-                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-                    aria-expanded={invoicesExpanded}
-                  >
-                    {invoicesExpanded ? (
-                      <><ChevronUp className="size-4" aria-hidden /> Hide</>
-                    ) : (
-                      <><ChevronDown className="size-4" aria-hidden /> Show all</>
-                    )}
-                  </button>
-                </div>
-              </CardHeader>
-              {invoicesExpanded && (
-                <CardContent>
-                  <div
-                    className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    tabIndex={0}
-                    role="region"
-                    aria-label="Invoices analyzed table"
-                  >
-                    <table className="w-full min-w-[420px] text-left text-sm">
-                      <thead className="text-muted-foreground">
-                        <tr className="border-b border-border">
-                          <th className="px-3 py-2 font-medium">Invoice #</th>
-                          <th className="px-3 py-2 font-medium">Invoice Date</th>
-                          <th className="px-3 py-2 font-medium text-right">Total Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {latestInvoices.map((inv) => (
-                          <tr key={`${inv.accountNumber}-${inv.invoiceNumber}`} className="border-b border-border">
-                            <td className="px-3 py-2 font-medium text-foreground">{inv.invoiceNumber}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{inv.invoiceDate ?? '—'}</td>
-                            <td className="px-3 py-2 text-right text-foreground">
-                              {inv.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t border-border bg-muted/30 font-semibold">
-                          <td className="px-3 py-2 text-foreground" colSpan={2}>Total</td>
-                          <td className="px-3 py-2 text-right text-foreground">
-                            {latestInvoices
-                              .reduce((sum, inv) => sum + (inv.totalCost ?? 0), 0)
-                              .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => exportSpendByInvoiceToCsv(latestInvoices, history[0].updated_at)}
-                    >
-                      <Download className="size-4" aria-hidden />
-                      Export to Excel
-                    </Button>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )
-        })()}
 
         </>}
 

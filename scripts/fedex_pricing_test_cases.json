@@ -1,0 +1,94 @@
+[
+  {
+    "label": "FC01 | Ground 1 lb | 601→10001 | Zone 5 | Commercial",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 1,
+      "destinationZip": "10001",
+      "service": "ground",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 22.20 }
+  },
+  {
+    "label": "FC02 | Ground 5 lb | 601→10001 | Zone 5 | Commercial",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 5,
+      "destinationZip": "10001",
+      "service": "ground",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 27.94 }
+  },
+  {
+    "label": "FC03 | Home Delivery 5 lb | 601→10001 | Residential",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 5,
+      "destinationZip": "10001",
+      "service": "ground",
+      "zoneChartPrefix": "601",
+      "residential": true,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 36.54 }
+  },
+  {
+    "label": "FC04 | Express Saver 5 lb | 601→10001 | Zone 5",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 5,
+      "destinationZip": "10001",
+      "service": "express_saver",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 170.50 }
+  },
+  {
+    "label": "FC05 | Priority Overnight 1 lb | 601→10001 | Zone 5",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 1,
+      "destinationZip": "10001",
+      "service": "priority_overnight",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 83.02 }
+  },
+  {
+    "label": "FC06 | Ground 2 lb DIM | 601→10001 | 12×10×8 dims",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 2,
+      "destinationZip": "10001",
+      "service": "ground",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "dimensionsIn": { "length": 12, "width": 10, "height": 8 },
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 28.77 }
+  },
+  {
+    "label": "FC07 | Ground 1 lb | 601→60601 | Zone 2 | Local",
+    "input": {
+      "carrier": "fedex",
+      "weightLbs": 1,
+      "destinationZip": "60601",
+      "service": "ground",
+      "zoneChartPrefix": "601",
+      "residential": false,
+      "fuelSurchargeRates": { "ground": 0.2675, "express": 0.3075 }
+    },
+    "tool_result": { "totalEstimatedCharge": 19.65 }
+  }
+]
