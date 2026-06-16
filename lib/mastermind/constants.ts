@@ -2,13 +2,12 @@ export const MASTERMIND_EVENT_SLUG = 'upcoming-mastermind'
 
 export const MASTERMIND_SESSION_TIMEZONE = 'America/New_York'
 
-/** First session — Thursday, June 25, 2026, 12:00 PM EST */
+/** First session — Thursday, June 25, 2026, 12:00 p.m. EST */
 export const MASTERMIND_SESSION_START_ISO = '2026-06-25T17:00:00.000Z'
 
-export const MASTERMIND_SESSION_WHEN = 'Thursday, June 25 · 12:00 PM EST'
+export const MASTERMIND_SESSION_WHEN = 'Thursday, June 25th at 12:00 p.m. EST'
 
-export const MASTERMIND_SESSION_WHEN_LONG =
-  'Thursday, June 25, 2026 at 12:00 PM EST — our first operator roundtable'
+export const MASTERMIND_SESSION_DURATION = '45-minute'
 
 export const MASTERMIND_TEAMS_JOIN_URL =
   process.env.NEXT_PUBLIC_MASTERMIND_TEAMS_URL?.trim() ||

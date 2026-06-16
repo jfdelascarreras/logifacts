@@ -178,6 +178,11 @@
   h6 {
     @apply font-heading;
   }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+  }
 }
 
 @layer utilities {
@@ -191,5 +196,55 @@
 
   .bg-gradient-blue-skies {
     background-image: var(--gradient-blue-skies);
+  }
+
+  @keyframes mastermind-input-glaze {
+    0%,
+    72%,
+    100% {
+      background-color: transparent;
+      box-shadow: none;
+    }
+
+    82% {
+      background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+        0 0 16px color-mix(in srgb, var(--accent) 14%, transparent),
+        inset 0 1px 0 color-mix(in srgb, var(--background) 55%, transparent);
+    }
+
+    90% {
+      background-color: color-mix(in srgb, var(--secondary) 10%, transparent);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+        0 0 12px color-mix(in srgb, var(--secondary) 22%, transparent);
+    }
+  }
+
+  .mastermind-input-glaze {
+    border-radius: var(--radius-md);
+    animation: mastermind-input-glaze 4.5s ease-in-out infinite;
+  }
+
+  .mastermind-input-glaze-delay-1 {
+    animation-delay: 1.5s;
+  }
+
+  .mastermind-input-glaze-delay-2 {
+    animation-delay: 3s;
+  }
+
+  .mastermind-input-glaze:focus-within {
+    animation: none;
+    background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mastermind-input-glaze {
+      animation: none;
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
   }
 }
