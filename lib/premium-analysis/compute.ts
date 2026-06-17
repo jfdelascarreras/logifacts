@@ -8,6 +8,7 @@ import {
   normalizeInvoiceAnalysisFilters,
   type InvoiceAnalysisSummary,
 } from '@/lib/premium-analysis/analysis-summary'
+import { loadUserContractDiscounts } from '@/lib/profile/contract-discounts'
 import { enrichSummaryWithAgentsOutputs } from '@/lib/premium-analysis/agents-outputs'
 import { buildSpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
 import { buildIngestDiagnostics, mergeParseVersions } from '@/lib/premium-analysis/ingest-diagnostics'
@@ -84,8 +85,9 @@ export async function computePremiumInvoiceAnalysis(
   const summaryBase = computeInvoiceAnalysisSummary(records, mappingByDescription)
   const periodMatrix = buildSpendShipmentPeriodMatrix(records)
   const ingestQuality = evaluateIngestQuality(ingestDiagnostics, summaryBase.measures.totalCost)
+  const contractDiscounts = await loadUserContractDiscounts(supabase, user)
   const summaryCore = applyIngestQualityGate(
-    enrichSummaryWithAgentsOutputs(summaryBase, records, mappings ?? [], user),
+    enrichSummaryWithAgentsOutputs(summaryBase, records, mappings ?? [], contractDiscounts),
     ingestQuality
   )
   const summaryForDashboard = {

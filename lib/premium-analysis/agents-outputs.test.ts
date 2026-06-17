@@ -60,7 +60,7 @@ describe('enrichSummaryWithAgentsOutputs', () => {
       }),
     ]
     const base = computeInvoiceAnalysisSummary(records, lookup)
-    const enriched = enrichSummaryWithAgentsOutputs(base, records, mappings, null)
+    const enriched = enrichSummaryWithAgentsOutputs(base, records, mappings)
 
     expect(enriched.specCategories?.totalCost).toBe(115)
     expect(enriched.measures.baseFreightCost).toBe(100)

@@ -53,6 +53,8 @@ export async function deleteUserData(admin: SupabaseClient, userId: string): Pro
     'invoice_rows',
     'raw_invoice_files',
     'invoice_uploads',
+    'user_products',
+    'user_contract_discounts',
   ] as const
 
   for (const table of tables) {

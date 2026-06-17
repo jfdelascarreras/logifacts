@@ -1,5 +1,3 @@
-import type { User } from '@supabase/supabase-js'
-
 import {
   buildChargeDescriptionLookup,
   shipmentPackageDedupeKey,
@@ -26,7 +24,7 @@ export function enrichSummaryWithAgentsOutputs(
   summary: InvoiceAnalysisSummary,
   records: InvoiceRecord[],
   mappingRows: ChargeDescriptionMappingRow[] | null | undefined,
-  user?: User | null
+  contractDiscounts: ContractDiscounts = {}
 ): InvoiceAnalysisSummary & AgentsAnalysisExtensions {
   const mappingLookup = buildChargeDescriptionLookup(mappingRows)
   const shipmentFacts = buildShipmentFacts(records, mappingLookup, mappingRows)
@@ -66,7 +64,6 @@ export function enrichSummaryWithAgentsOutputs(
   const datasetFlags = buildDatasetFlags(enrichedBase, records, mappingLookup, mappingRows)
   let anomalyFlags = detectAnomalies(records, enrichedBase, mappingLookup, mappingRows, shipmentFacts)
 
-  const contractDiscounts = (user?.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
   const contractFlags = detectContractDiscountShortfalls(records, contractDiscounts)
   anomalyFlags = [...anomalyFlags, ...contractFlags].sort((a, b) => b.amount - a.amount)
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { resolveFedExFuelSurchargeRates } from '@/lib/cache/fedex-fuel-surcharge-cache'
 import { resolveFuelSurchargeRates } from '@/lib/cache/ups-fuel-surcharge-cache'
+import { loadUserContractDiscounts } from '@/lib/profile/contract-discounts'
 import { createClient } from '@/lib/supabase/server'
 import { estimateFedEx } from '@/lib/pricing/fedex-estimate'
 import { loadFedExZoneChart, resolveFedExZoneChartPrefix } from '@/lib/pricing/fedex-zone-chart-loader'
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const profileDiscounts = (user.user_metadata?.contract_discounts as ContractDiscounts | undefined) ?? {}
+  const profileDiscounts = await loadUserContractDiscounts(supabase, user)
   const bodyDiscounts = (rawDiscounts !== null && typeof rawDiscounts === 'object')
     ? rawDiscounts as ContractDiscounts
     : {}

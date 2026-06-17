@@ -76,7 +76,7 @@ describe('golden ingest — FedEx fixture', () => {
     expect(summary.measures.packageDedupeShipmentCount).toBeGreaterThan(100)
     expect(summary.measures.weightGap).toBeGreaterThan(0)
 
-    const enriched = enrichSummaryWithAgentsOutputs(summary, records, [], null)
+    const enriched = enrichSummaryWithAgentsOutputs(summary, records, [])
     const flags = enriched.anomalyFlags
     const flagTotal = sumDollarFlagAmounts(flags)
     expect(flagTotal).toBeLessThanOrEqual(summary.measures.totalCost + 0.01)

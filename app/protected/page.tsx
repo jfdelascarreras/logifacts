@@ -3,9 +3,10 @@ import { redirect } from 'next/navigation'
 import { CloseAccountSection } from '@/app/components/profile/close-account-section'
 import { ContractDiscountsEditor } from '@/app/components/profile/contract-discounts-editor'
 import { ProfileEditor } from '@/app/components/profile/profile-editor'
+import { UserProductsEditor } from '@/app/components/profile/user-products-editor'
 import { AuthenticatedShell } from '@/app/components/navigation/authenticated-shell'
+import { loadUserContractDiscounts } from '@/lib/profile/contract-discounts'
 import { createClient } from '@/lib/supabase/server'
-import type { ContractDiscounts } from '@/lib/pricing'
 
 export default async function ProtectedPage() {
   const supabase = await createClient()
@@ -17,6 +18,14 @@ export default async function ProtectedPage() {
   }
 
   const metadata = user.user_metadata ?? {}
+
+  const [{ data: productRows }, initialDiscounts] = await Promise.all([
+    supabase
+      .from('user_products')
+      .select('id, name, weight_lbs, length_in, width_in, height_in, created_at, updated_at')
+      .order('name'),
+    loadUserContractDiscounts(supabase, user),
+  ])
 
   return (
     <AuthenticatedShell
@@ -33,9 +42,8 @@ export default async function ProtectedPage() {
           companyPictureUrl={(metadata.company_picture_url as string | undefined) ?? ''}
           originZip={(metadata.origin_zip as string | undefined) ?? ''}
         />
-        <ContractDiscountsEditor
-          initialDiscounts={(metadata.contract_discounts as ContractDiscounts | undefined) ?? {}}
-        />
+        <ContractDiscountsEditor initialDiscounts={initialDiscounts} />
+        <UserProductsEditor initialProducts={productRows ?? []} />
         <CloseAccountSection email={user.email ?? ''} />
       </div>
     </AuthenticatedShell>

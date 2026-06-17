@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { contractDiscountsToRow } from '@/lib/profile/contract-discounts'
 import { createClient } from '@/lib/supabase/client'
 import type { ContractDiscounts } from '@/lib/pricing'
 
@@ -64,10 +65,17 @@ export function ContractDiscountsEditor({ initialDiscounts }: Props) {
 
     try {
       const supabase = createClient()
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { contract_discounts: discounts },
-      })
-      if (updateError) throw updateError
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
+      if (authError) throw authError
+      if (!user) throw new Error('Not signed in.')
+
+      const { error: upsertError } = await supabase
+        .from('user_contract_discounts')
+        .upsert(contractDiscountsToRow(user.id, discounts), { onConflict: 'user_id' })
+      if (upsertError) throw upsertError
       setMessage('Contract discounts saved.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unable to save discounts.')
