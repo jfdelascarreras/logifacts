@@ -6,13 +6,6 @@ import { usePathname } from 'next/navigation'
 import { ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { CostForecastCard } from '@/app/components/analysis/cost-forecast-card'
 import { CostTrendGrid } from '@/app/components/analysis/cost-trend-grid'
@@ -34,6 +27,7 @@ import {
   type InvoiceAnalysisFilters,
 } from '@/lib/premium-analysis/analysis-summary'
 import type { SpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
+import { paper, paperTableCell, paperTableHeadCell } from '@/app/components/analysis/premium-paper-styles'
 import { cn } from '@/lib/utils'
 
 type Measures = {
@@ -124,53 +118,69 @@ type AnalysisHistoryItem = {
   summary: Summary & Record<string, unknown>
 }
 
-// ─── Sparkline ───────────────────────────────────────────────────────────────
-
-function Sparkline({ data, color }: { data: number[]; color: string }) {
-  if (data.length < 2) return null
-  const W = 96, H = 40
-  const min = Math.min(...data), max = Math.max(...data)
-  const range = max - min || 1
-  const pts = data.map((v, i) => ({
-    x: (i / (data.length - 1)) * W,
-    y: H - 4 - ((v - min) / range) * (H - 12),
-  }))
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
-  const fill = `${line} L${pts.at(-1)!.x.toFixed(1)} ${H} L0 ${H}Z`
-  const last = pts.at(-1)!
-  return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 self-center">
-      <path d={fill} fill={color} opacity={0.07} />
-      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
-      <circle cx={last.x} cy={last.y} r={2.5} fill={color} opacity={0.9} />
-    </svg>
-  )
-}
-
-// ─── MetricCard ───────────────────────────────────────────────────────────────
-
-function MetricCard({
-  label, value, sub, sparkData, sparkColor,
+function SummaryStatisticsTable({
+  measures,
+  packageDedupeShipmentCount,
 }: {
-  label: string
-  value: string
-  sub?: string
-  sparkData?: number[]
-  sparkColor?: string
+  measures: Measures
+  packageDedupeShipmentCount?: number
 }) {
+  const fmt = (n: number) =>
+    n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const rows: Array<{ label: string; value: string; note?: string }> = [
+    { label: 'Total cost', value: fmt(measures.totalCost) },
+    {
+      label: 'Total packages',
+      value: measures.totalPackages.toLocaleString(),
+      note:
+        typeof packageDedupeShipmentCount === 'number'
+          ? `${packageDedupeShipmentCount.toLocaleString()} distinct shipments`
+          : undefined,
+    },
+    { label: 'Fuel cost', value: fmt(measures.fuelCost) },
+    { label: 'Surcharges', value: fmt(measures.costSurcharges) },
+    { label: 'Accessorials', value: fmt(measures.costAccessorials ?? 0) },
+    { label: 'Weight gap', value: fmt(measures.weightGap) },
+  ]
+
   return (
-    <div className="rounded-lg border border-border bg-card px-5 py-4">
-      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <div className="text-2xl font-semibold tracking-tight text-foreground">{value}</div>
-          {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+    <section className={paper.section} aria-labelledby="premium-summary-stats">
+      <header className={paper.sectionHeader}>
+        <h2 id="premium-summary-stats" className={paper.sectionTitle}>
+          <span className={paper.sectionNumber}>Table 1.</span>
+          Summary statistics
+        </h2>
+        <p className={paper.sectionDesc}>
+          Aggregate measures for the filtered invoice sample. All monetary values in USD.
+        </p>
+      </header>
+      <div className={paper.sectionBody}>
+        <div className={paper.tableWrap} tabIndex={0} role="region" aria-label="Summary statistics">
+          <table className={paper.table}>
+            <thead className={paper.tableHead}>
+              <tr>
+                <th className={paperTableHeadCell()}>Measure</th>
+                <th className={paperTableHeadCell(true)}>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.label}>
+                  <td className={paperTableCell(false, true)}>{row.label}</td>
+                  <td className={paperTableCell(true)}>
+                    {row.value}
+                    {row.note ? (
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{row.note}</span>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {sparkData && sparkData.length >= 2 && sparkColor && (
-          <Sparkline data={sparkData} color={sparkColor} />
-        )}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -673,29 +683,31 @@ export function PremiumDashboard() {
   }
 
   return (
-    <div className="min-h-svh w-full bg-background px-4 py-8 text-foreground sm:py-10">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="font-heading text-3xl font-bold tracking-wide text-accent">Premium Analysis</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              High-level cost and volume metrics based on invoice CSVs you upload on this page.
-            </p>
-            {fromCache && summary ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Showing your last saved analysis from the server. Multi-file uploads run one combined analysis at the end; use{' '}
-                <span className="font-medium text-foreground">Refresh analysis</span> for a manual full recompute when
-                you need it.
+    <div className={cn(paper.root, 'min-h-svh w-full bg-background px-4 py-8 sm:py-10')}>
+      <div className={paper.page}>
+        <header className="border-b border-border pb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className={paper.docTitle}>Premium Analysis</h1>
+              <p className={paper.docSubtitle}>
+                Invoice-level cost and volume aggregates computed from uploaded carrier files. Figures and tables
+                below follow standard summary-statistics conventions; filters restrict the sample without altering
+                column definitions.
               </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              className="border-accent/40 bg-background text-accent hover:bg-accent/10"
-              onClick={exportPremiumExcel}
-              disabled={loadingCached || exporting || refreshing}
-            >
+              {fromCache && summary ? (
+                <p className={paper.docMeta}>
+                  Cached run from server storage. Use <span className="text-foreground">Refresh analysis</span> to
+                  recompute the full multi-file dataset.
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 font-sans">
+              <Button
+                variant="outline"
+                className={paper.btnOutline}
+                onClick={exportPremiumExcel}
+                disabled={loadingCached || exporting || refreshing}
+              >
               {exporting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
@@ -710,20 +722,18 @@ export function PremiumDashboard() {
             </Button>
             <Button
               variant="outline"
-              className="border-accent/40 bg-background text-accent hover:bg-accent/10"
+              className={paper.btnOutline}
               onClick={refreshAnalysis}
               disabled={loadingCached || refreshing || exporting}
             >
               {refreshing && analysisPostIntent === 'full-refresh' ? 'Recomputing…' : 'Refresh analysis'}
             </Button>
           </div>
+          </div>
         </header>
 
         {error ? (
-          <div
-            role="alert"
-            className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
+          <div role="alert" className={cn(paper.alert, paper.alertError, 'font-sans')}>
             {error}
           </div>
         ) : null}
@@ -731,7 +741,7 @@ export function PremiumDashboard() {
         {refreshWarning ? (
           <div
             role="status"
-            className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+            className={cn(paper.alert, 'font-sans flex items-start justify-between gap-3 border-amber-600/30 bg-amber-50/50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100')}
           >
             <p>
               <span className="font-medium">Refresh did not complete.</span> Showing your last saved analysis.{' '}
@@ -765,29 +775,29 @@ export function PremiumDashboard() {
         ) : null}
 
         {summary && measures ? (
-          <Card className="border-accent/25 bg-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Filters</CardTitle>
-              <CardDescription>
-                Years, months, and account numbers come from your invoice CSVs. Optionally pick a year to limit which
-                calendar months appear. Select one or more months by name. Unfiltered analysis writes daily spend to
-                Supabase split by account; filtered runs only refresh the saved JSON summary here.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+          <section className={paper.section} aria-labelledby="premium-filters">
+            <header className={paper.sectionHeader}>
+              <h2 id="premium-filters" className={paper.sectionTitle}>
+                <span className={paper.sectionNumber}>§1</span>
+                Sample filters
+              </h2>
+              <p className={paper.sectionDesc}>
+                Restrict the analysis sample by year, calendar month, or account. Unfiltered runs persist daily spend
+                by account in storage; filtered runs update the in-memory summary only.
+              </p>
+            </header>
+            <div className={cn(paper.sectionBody, 'flex flex-col gap-4 font-sans')}>
               {refreshing && analysisPostIntent === 'filters' ? (
                 <div
                   role="status"
                   aria-live="polite"
                   aria-busy="true"
-                  className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-foreground"
+                  className={cn(paper.alert, 'flex items-center gap-3')}
                 >
-                  <Loader2 className="size-5 shrink-0 animate-spin text-accent" aria-hidden />
+                  <Loader2 className="size-4 shrink-0 animate-spin text-foreground" aria-hidden />
                   <div>
                     <p className="font-medium text-foreground">Applying filters</p>
-                    <p className="text-muted-foreground">
-                      Recalculating metrics and charts — this can take a few seconds.
-                    </p>
+                    <p className="text-muted-foreground">Recalculating tables and figures.</p>
                   </div>
                 </div>
               ) : null}
@@ -796,7 +806,7 @@ export function PremiumDashboard() {
                   <Label htmlFor="premium-filter-year">Year</Label>
                   <select
                     id="premium-filter-year"
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(paper.control, 'h-9 w-full px-3')}
                     value={filterYear}
                     onChange={(e) => setFilterYear(e.target.value)}
                     disabled={refreshing}
@@ -813,7 +823,7 @@ export function PremiumDashboard() {
                   <Label htmlFor="premium-filter-account">Account number</Label>
                   <select
                     id="premium-filter-account"
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(paper.control, 'h-9 w-full px-3')}
                     value={filterAccount}
                     onChange={(e) => setFilterAccount(e.target.value)}
                     disabled={refreshing}
@@ -865,7 +875,7 @@ export function PremiumDashboard() {
                   role="group"
                   aria-labelledby="premium-filter-months-label"
                   aria-describedby="premium-filter-months-hint"
-                  className="rounded-lg border border-border bg-muted/15 p-2 sm:p-3"
+                  className="rounded-none border border-border bg-muted/15 p-2 sm:p-3"
                 >
                   {invoiceMonthChoices.length === 0 ? (
                     <p className="px-1 py-6 text-center text-sm text-muted-foreground">No invoice months in uploads</p>
@@ -877,10 +887,8 @@ export function PremiumDashboard() {
                           <label
                             key={m}
                             className={cn(
-                              'relative flex min-h-12 cursor-pointer select-none items-center justify-center rounded-md border px-2 py-2.5 text-center text-sm font-medium leading-tight transition-colors motion-reduce:transition-none',
-                              selected
-                                ? 'border-accent bg-accent/15 text-foreground shadow-sm ring-1 ring-accent/25'
-                                : 'border-border bg-background text-muted-foreground hover:border-accent/35 hover:bg-muted/60 hover:text-foreground',
+                              paper.monthChip,
+                              selected ? paper.monthChipSelected : paper.monthChipIdle,
                               refreshing && 'pointer-events-none opacity-50'
                             )}
                           >
@@ -911,7 +919,7 @@ export function PremiumDashboard() {
                 <Button
                   type="button"
                   variant="default"
-                  className="bg-accent text-accent-foreground hover:bg-accent/90"
+                  className={paper.btnPrimary}
                   onClick={() => void applyFilters()}
                   disabled={loadingCached || refreshing}
                 >
@@ -924,7 +932,7 @@ export function PremiumDashboard() {
                     'Apply filters'
                   )}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => void clearFilters()} disabled={refreshing}>
+                <Button type="button" variant="outline" className={paper.btnOutline} onClick={() => void clearFilters()} disabled={refreshing}>
                   {refreshing && analysisPostIntent === 'filters' ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -939,30 +947,28 @@ export function PremiumDashboard() {
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
                   <input
                     type="checkbox"
-                    className="size-4 rounded border border-input accent-accent"
+                    className="size-4 rounded-none border border-input accent-primary"
                     checked={detailByInvoice}
                     onChange={(e) => setDetailByInvoice(e.target.checked)}
                   />
                   Detail by invoice
                 </label>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ) : null}
 
         {summary ? (
-          <div className="flex gap-1 border-b">
+          <div className={paper.tabList} role="tablist" aria-label="Analysis views">
             {(['analysis', 'forecast'] as const).map((tab) => (
               <button
                 key={tab}
+                role="tab"
+                aria-selected={activeTab === tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
-                  activeTab === tab
-                    ? 'border-primary text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
+                className={cn(paper.tab, activeTab === tab && paper.tabActive, '-mb-px')}
               >
-                {tab === 'analysis' ? 'Analysis' : 'Forecast'}
+                {tab === 'analysis' ? 'Empirical results' : 'Forecast'}
               </button>
             ))}
           </div>
@@ -975,7 +981,7 @@ export function PremiumDashboard() {
         ) : null}
 
         {!loadingCached && !summary && !error && !refreshing ? (
-          <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+          <div className={cn(paper.section, paper.sectionBody, 'text-sm text-muted-foreground')}>
             {storedUploadCount > 0 ? (
               <p>
                 You have {storedUploadCount} uploaded file{storedUploadCount !== 1 ? 's' : ''} in{' '}
@@ -988,7 +994,7 @@ export function PremiumDashboard() {
                 No invoice files yet.{' '}
                 <a
                   href="#premium-invoice-upload"
-                  className="font-medium text-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  className="text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   Upload invoices
                 </a>{' '}
@@ -1001,59 +1007,29 @@ export function PremiumDashboard() {
         {activeTab === 'analysis' && <>
 
         {summary && measures ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <MetricCard
-              label="Total Cost"
-              value={measures.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              sparkData={summary.monthlySpend?.map(m => m.totalCost)}
-              sparkColor="#6366F1"
-            />
-            <MetricCard
-              label="Total Packages"
-              value={measures.totalPackages.toLocaleString()}
-              sub={typeof measures.packageDedupeShipmentCount === 'number'
-                ? `${measures.packageDedupeShipmentCount.toLocaleString()} distinct shipments`
-                : undefined}
-            />
-            <MetricCard
-              label="Fuel Cost"
-              value={measures.fuelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              sparkData={summary.monthlySpend?.map(m => m.costFuel ?? 0)}
-              sparkColor="#F59E0B"
-            />
-            <MetricCard
-              label="Cost — Surcharges"
-              value={measures.costSurcharges.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              sparkData={summary.monthlySpend?.map(m => m.costSurcharges ?? 0)}
-              sparkColor="#3B82F6"
-            />
-            <MetricCard
-              label="Cost — Accessorials"
-              value={(measures.costAccessorials ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              sparkData={summary.monthlySpend?.map(m => m.costAccessorials ?? 0)}
-              sparkColor="#8B5CF6"
-            />
-            <MetricCard
-              label="Weight Gap"
-              value={measures.weightGap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            />
-          </div>
+          <SummaryStatisticsTable
+            measures={measures}
+            packageDedupeShipmentCount={measures.packageDedupeShipmentCount}
+          />
         ) : null}
 
         {summary?.spendByCarrier && summary.spendByCarrier.length > 1 ? (
-          <Card className="border-accent/25 bg-card">
-            <CardHeader>
-              <CardTitle>Spend by Carrier</CardTitle>
-              <CardDescription>Total cost split across all carriers in your invoices</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-md" tabIndex={0} role="region" aria-label="Spend by carrier table">
-                <table className="w-full min-w-[320px] text-left text-sm">
-                  <thead className="text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="px-3 py-2 font-medium">Carrier</th>
-                      <th className="px-3 py-2 font-medium text-right">Total Cost</th>
-                      <th className="px-3 py-2 font-medium text-right">% of Total</th>
+          <section className={paper.section}>
+            <header className={paper.sectionHeader}>
+              <h2 className={paper.sectionTitle}>
+                <span className={paper.sectionNumber}>Table 2.</span>
+                Spend by carrier
+              </h2>
+              <p className={paper.sectionDesc}>Share of total net spend by carrier in the filtered sample.</p>
+            </header>
+            <div className={paper.sectionBody}>
+              <div className={paper.tableWrap} tabIndex={0} role="region" aria-label="Spend by carrier table">
+                <table className={paper.table}>
+                  <thead className={paper.tableHead}>
+                    <tr>
+                      <th className={paperTableHeadCell()}>Carrier</th>
+                      <th className={paperTableHeadCell(true)}>Total cost</th>
+                      <th className={paperTableHeadCell(true)}>% of total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1061,59 +1037,62 @@ export function PremiumDashboard() {
                       const grandTotal = summary.spendByCarrier!.reduce((s, r) => s + r.totalCost, 0)
                       const pct = grandTotal > 0 ? (row.totalCost / grandTotal) * 100 : 0
                       return (
-                        <tr key={row.carrier} className="border-b border-border">
-                          <td className="px-3 py-2 font-medium text-foreground">{row.carrier}</td>
-                          <td className="px-3 py-2 text-right text-foreground">
+                        <tr key={row.carrier}>
+                          <td className={paperTableCell(false, true)}>{row.carrier}</td>
+                          <td className={paperTableCell(true)}>
                             {row.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-3 py-2 text-right text-foreground">{pct.toFixed(1)}%</td>
+                          <td className={paperTableCell(true)}>{pct.toFixed(1)}%</td>
                         </tr>
                       )
                     })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-border bg-muted/30 font-semibold">
-                      <td className="px-3 py-2 text-foreground">Total</td>
-                      <td className="px-3 py-2 text-right text-foreground">
+                    <tr className={paper.tfoot}>
+                      <td className={paperTableCell(false, true)}>Total</td>
+                      <td className={paperTableCell(true)}>
                         {summary.spendByCarrier.reduce((s, r) => s + r.totalCost, 0)
                           .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-3 py-2 text-right text-foreground">100.0%</td>
+                      <td className={paperTableCell(true)}>100.0%</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ) : null}
 
         {accountBreakdown.length > 1 ? (
-          <Card className="border-accent/25 bg-card">
-            <CardHeader>
-              <CardTitle>Cost by Account</CardTitle>
-              <CardDescription>Total spend split by UPS account number</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <section className={paper.section}>
+            <header className={paper.sectionHeader}>
+              <h2 className={paper.sectionTitle}>
+                <span className={paper.sectionNumber}>Table 3.</span>
+                Cost by account
+              </h2>
+              <p className={paper.sectionDesc}>Total spend by UPS account number.</p>
+            </header>
+            <div className={paper.sectionBody}>
               <div
-                className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className={cn(paper.tableWrap, 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring')}
                 tabIndex={0}
                 role="region"
                 aria-label="Cost by account table"
               >
-                <table className="w-full min-w-[360px] text-left text-sm">
-                  <thead className="text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="px-3 py-2 font-medium">Account Number</th>
-                      <th className="px-3 py-2 font-medium text-right">Total Cost</th>
-                      <th className="px-3 py-2 font-medium text-right">% of Total</th>
+                <table className={cn(paper.table, 'min-w-[360px]')}>
+                  <thead className={paper.tableHead}>
+                    <tr>
+                      <th className={paperTableHeadCell()}>Account number</th>
+                      <th className={paperTableHeadCell(true)}>Total cost</th>
+                      <th className={paperTableHeadCell(true)}>% of total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {accountBreakdown.map((row) => {
                       const needsSciNotationReview = identifierLooksScientificNotationCorrupted(row.accountNumber)
                       return (
-                      <tr key={row.accountNumber} className="border-b border-border">
-                        <td className="px-3 py-2 font-medium text-foreground">
+                      <tr key={row.accountNumber}>
+                        <td className={paperTableCell(false, true)}>
                           <span>{row.accountNumber}</span>
                           {needsSciNotationReview && (
                             <span
@@ -1124,80 +1103,83 @@ export function PremiumDashboard() {
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right text-foreground">
+                        <td className={paperTableCell(true)}>
                           {row.totalCost.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-right text-foreground">{row.pct.toFixed(1)}%</td>
+                        <td className={paperTableCell(true)}>{row.pct.toFixed(1)}%</td>
                       </tr>
                     )})}
 
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-border bg-muted/30 font-semibold">
-                      <td className="px-3 py-2 text-foreground">Total</td>
-                      <td className="px-3 py-2 text-right text-foreground">
+                    <tr className={paper.tfoot}>
+                      <td className={paperTableCell(false, true)}>Total</td>
+                      <td className={paperTableCell(true)}>
                         {accountBreakdown
                           .reduce((s, r) => s + r.totalCost, 0)
                           .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-3 py-2 text-right text-foreground">100.0%</td>
+                      <td className={paperTableCell(true)}>100.0%</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ) : null}
 
         {summary?.monthlySpend?.length ? (
-          <Card className="border-accent/25 bg-card transition-transform duration-200 ease-out hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-            <CardHeader>
-              <CardTitle>Spend by Month</CardTitle>
-              <CardDescription>Monthly spend trends</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <section className={paper.section}>
+            <header className={paper.sectionHeader}>
+              <h2 className={paper.sectionTitle}>
+                <span className={paper.sectionNumber}>Table 4.</span>
+                Monthly spend decomposition
+              </h2>
+              <p className={paper.sectionDesc}>Total cost and component charges by calendar month.</p>
+            </header>
+            <div className={paper.sectionBody}>
               <div
-                className="overflow-x-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className={cn(paper.tableWrap, 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring')}
                 tabIndex={0}
                 role="region"
-                aria-label="Spend by month table (horizontal scroll area)"
+                aria-label="Spend by month table"
               >
-                <table className="w-full min-w-[520px] text-left text-sm">
-                  <thead className="text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="px-3 py-2 font-medium">Month</th>
-                      <th className="px-3 py-2 font-medium">Total Cost</th>
-                      <th className="px-3 py-2 font-medium">Cost - Fuel</th>
-                      <th className="px-3 py-2 font-medium">Cost - Accessorials</th>
-                      <th className="px-3 py-2 font-medium">Cost - Surcharges</th>
+                <table className={cn(paper.table, 'min-w-[520px]')}>
+                  <thead className={paper.tableHead}>
+                    <tr>
+                      <th className={paperTableHeadCell()}>Month</th>
+                      <th className={paperTableHeadCell(true)}>Total cost</th>
+                      <th className={paperTableHeadCell(true)}>Fuel</th>
+                      <th className={paperTableHeadCell(true)}>Accessorials</th>
+                      <th className={paperTableHeadCell(true)}>Surcharges</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.monthlySpend.map((row) => (
-                      <tr key={row.month} className="border-b border-border">
-                        <td className="px-3 py-2 text-foreground">{row.month}</td>
-                        <td className="px-3 py-2 text-foreground">
+                      <tr key={row.month}>
+                        <td className={paperTableCell(false, true)}>{row.month}</td>
+                        <td className={paperTableCell(true)}>
                           {row.totalCost.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {(row.costFuel ?? 0).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {(row.costAccessorials ?? 0).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {(row.costSurcharges ?? 0).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -1205,27 +1187,27 @@ export function PremiumDashboard() {
                         </td>
                       </tr>
                     ))}
-                    <tr className="border-t border-border bg-muted/30 font-semibold">
-                      <td className="px-3 py-2 text-foreground">Totals</td>
-                      <td className="px-3 py-2 text-foreground">
+                    <tr className={paper.tfoot}>
+                      <td className={paperTableCell(false, true)}>Totals</td>
+                      <td className={paperTableCell(true)}>
                         {monthlyTotals.totalCost.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {monthlyTotals.costFuel.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {monthlyTotals.costAccessorials.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {monthlyTotals.costSurcharges.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
@@ -1235,8 +1217,8 @@ export function PremiumDashboard() {
                   </tbody>
                 </table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ) : null}
 
         {(() => {
@@ -1250,55 +1232,58 @@ export function PremiumDashboard() {
         })()}
 
         {detailByInvoice && summary?.spendByInvoice?.length ? (
-          <Card className="border-accent/25 bg-card">
-            <CardHeader>
-              <CardTitle>Spend by invoice</CardTitle>
-              <CardDescription>Same cost splits as the monthly table, rolled up per UPS invoice.</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <section className={paper.section}>
+            <header className={paper.sectionHeader}>
+              <h2 className={paper.sectionTitle}>
+                <span className={paper.sectionNumber}>Table A.1</span>
+                Invoice-level detail
+              </h2>
+              <p className={paper.sectionDesc}>Cost decomposition rolled up to individual invoices (optional appendix).</p>
+            </header>
+            <div className={paper.sectionBody}>
               <div
-                className="max-h-[min(28rem,55vh)] overflow-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className={cn(paper.tableWrap, 'max-h-[min(28rem,55vh)] overflow-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring')}
                 tabIndex={0}
                 role="region"
                 aria-label="Spend by invoice table"
               >
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="sticky top-0 z-10 bg-card text-muted-foreground shadow-sm">
-                    <tr className="border-b border-border">
-                      <th className="px-3 py-2 font-medium">Invoice date</th>
-                      <th className="px-3 py-2 font-medium">Account</th>
-                      <th className="px-3 py-2 font-medium">Invoice #</th>
-                      <th className="px-3 py-2 font-medium">Total cost</th>
-                      <th className="px-3 py-2 font-medium">Cost – fuel</th>
-                      <th className="px-3 py-2 font-medium">Cost – accessorials</th>
-                      <th className="px-3 py-2 font-medium">Cost – surcharges</th>
+                <table className={cn(paper.table, 'min-w-[640px]')}>
+                  <thead className={cn(paper.tableHead, 'sticky top-0 z-10 bg-card')}>
+                    <tr>
+                      <th className={paperTableHeadCell()}>Invoice date</th>
+                      <th className={paperTableHeadCell()}>Account</th>
+                      <th className={paperTableHeadCell()}>Invoice #</th>
+                      <th className={paperTableHeadCell(true)}>Total cost</th>
+                      <th className={paperTableHeadCell(true)}>Fuel</th>
+                      <th className={paperTableHeadCell(true)}>Accessorials</th>
+                      <th className={paperTableHeadCell(true)}>Surcharges</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.spendByInvoice.map((row) => (
-                      <tr key={`${row.accountNumber}-${row.invoiceNumber}`} className="border-b border-border">
-                        <td className="px-3 py-2 text-foreground">{row.invoiceDate ?? '—'}</td>
-                        <td className="px-3 py-2 text-foreground">{row.accountNumber}</td>
-                        <td className="px-3 py-2 text-foreground">{row.invoiceNumber}</td>
-                        <td className="px-3 py-2 text-foreground">
+                      <tr key={`${row.accountNumber}-${row.invoiceNumber}`}>
+                        <td className={paperTableCell()}>{row.invoiceDate ?? '—'}</td>
+                        <td className={paperTableCell()}>{row.accountNumber}</td>
+                        <td className={paperTableCell()}>{row.invoiceNumber}</td>
+                        <td className={paperTableCell(true)}>
                           {row.totalCost.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {row.costFuel.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {row.costAccessorials.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-3 py-2 text-foreground">
+                        <td className={paperTableCell(true)}>
                           {row.costSurcharges.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -1306,29 +1291,29 @@ export function PremiumDashboard() {
                         </td>
                       </tr>
                     ))}
-                    <tr className="border-t border-border bg-muted/30 font-semibold">
-                      <td className="px-3 py-2 text-foreground" colSpan={3}>
+                    <tr className={paper.tfoot}>
+                      <td className={paperTableCell(false, true)} colSpan={3}>
                         Totals
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {invoiceTotals.totalCost.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {invoiceTotals.costFuel.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {invoiceTotals.costAccessorials.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-2 text-foreground">
+                      <td className={paperTableCell(true)}>
                         {invoiceTotals.costSurcharges.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
@@ -1338,8 +1323,8 @@ export function PremiumDashboard() {
                   </tbody>
                 </table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ) : null}
 
         {summary?.dailySpend?.length ? <CostTrendGrid dailySpend={summary.dailySpend} /> : null}

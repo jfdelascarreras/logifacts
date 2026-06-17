@@ -247,4 +247,25 @@
       box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
     }
   }
+
+  /* Premium Analysis — economic working-paper typography (palette unchanged) */
+  .premium-paper {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", Times, serif;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  .premium-paper .font-sans {
+    font-family: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .premium-paper h1,
+  .premium-paper h2,
+  .premium-paper h3,
+  .premium-paper .font-serif {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", Times, serif;
+  }
+
+  .premium-paper table {
+    font-variant-numeric: tabular-nums;
+  }
 }

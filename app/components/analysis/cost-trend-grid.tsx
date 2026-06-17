@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { paper } from '@/app/components/analysis/premium-paper-styles'
+import { cn } from '@/lib/utils'
 
 type DailySpendPoint = {
   date: string
@@ -283,7 +284,7 @@ function Sparkline({
     onHoverIndexChange?.(hoveredIdx)
   }, [hoveredIdx, onHoverIndexChange])
 
-  if (!values.length) return <div className="h-44 rounded-md border border-border bg-muted/20" />
+  if (!values.length) return <div className="h-44 border border-border bg-muted/15" />
   const width = 640
   const height = 220
   const min = Math.min(...values)
@@ -295,13 +296,8 @@ function Sparkline({
     return { x, y }
   })
 
-  const smoothPath = points
-    .map((point, idx, arr) => {
-      if (idx === 0) return `M ${point.x} ${point.y}`
-      const prev = arr[idx - 1]
-      const midX = (prev.x + point.x) / 2
-      return `Q ${midX} ${prev.y}, ${point.x} ${point.y}`
-    })
+  const linePath = points
+    .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
     .join(' ')
 
   const monthTicks = buildMonthAxisTicks(dates, 7)
@@ -351,33 +347,27 @@ function Sparkline({
             x2={hoveredPoint.x}
             y1={8}
             y2={height - 8}
-            stroke={stroke}
-            strokeOpacity="0.28"
-            strokeWidth="1.25"
-            strokeDasharray="3 3"
+            stroke="currentColor"
+            strokeOpacity="0.2"
+            strokeWidth="1"
           />
         ) : null}
         <path
-          d={smoothPath}
+          d={linePath}
           fill="none"
           stroke={stroke}
-          strokeOpacity="0.85"
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
         />
         {hoveredPoint ? (
-          <>
-            <circle
-              cx={hoveredPoint.x}
-              cy={hoveredPoint.y}
-              r={4.25}
-              fill={stroke}
-              stroke="var(--background)"
-              strokeWidth={1.5}
-            />
-            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r={8} fill={stroke} fillOpacity={0.15} />
-          </>
+          <rect
+            x={hoveredPoint.x - 3}
+            y={hoveredPoint.y - 3}
+            width={6}
+            height={6}
+            fill={stroke}
+          />
         ) : null}
       </svg>
       <div className="relative mt-1 h-6 overflow-hidden px-0.5 text-[11px] leading-tight text-muted-foreground">
@@ -396,9 +386,11 @@ function Sparkline({
 }
 
 function CostTrendMetricCard({
+  figureLabel,
   metric,
   dailySpend,
 }: {
+  figureLabel: string
   metric: (typeof METRICS)[number]
   dailySpend: DailySpendPoint[]
 }) {
@@ -437,33 +429,38 @@ function CostTrendMetricCard({
   }
 
   return (
-    <Card className="border-border bg-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base text-foreground">
-          {metric.title} | ${formatCompact(total)}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+    <section className={paper.section}>
+      <header className={paper.sectionHeader}>
+        <h3 className={paper.sectionTitle}>
+          <span className={paper.sectionNumber}>{figureLabel}</span>
+          Daily {metric.title.toLowerCase()} series
+        </h3>
+        <p className={paper.sectionDesc}>
+          Cumulative sample total ${formatCompact(total)}. Rollups below use the hovered date when present.
+        </p>
+      </header>
+      <div className={paper.sectionBody}>
+        <div className="grid grid-cols-3 gap-2 border-b border-border pb-3 text-xs text-muted-foreground">
           <div>
-            <div className="font-medium text-foreground">Week</div>
-            <div>${formatCompact(week)}</div>
+            <div className="uppercase tracking-wide text-muted-foreground">Week</div>
+            <div className="font-medium text-foreground">${formatCompact(week)}</div>
             <div>{deltaText(week, weekPrev)}</div>
           </div>
           <div>
-            <div className="font-medium text-foreground">Month</div>
-            <div>${formatCompact(month)}</div>
+            <div className="uppercase tracking-wide text-muted-foreground">Month</div>
+            <div className="font-medium text-foreground">${formatCompact(month)}</div>
             <div>{deltaText(month, monthPrev)}</div>
           </div>
           <div>
-            <div className="font-medium text-foreground">YTD</div>
-            <div>${formatCompact(ytd)}</div>
+            <div className="uppercase tracking-wide text-muted-foreground">YTD</div>
+            <div className="font-medium text-foreground">${formatCompact(ytd)}</div>
             <div>{deltaText(ytd, ytdPrev)}</div>
           </div>
         </div>
         {anchorDate ? (
           <p className="text-[11px] text-muted-foreground">Rollups as of {anchorDate}</p>
         ) : null}
+        <div className={cn(paper.figureBox, 'mt-3')}>
         <Sparkline
           values={series}
           stroke={metric.strokeVar}
@@ -472,8 +469,9 @@ function CostTrendMetricCard({
           strokeWidth={metric.strokeWidth}
           onHoverIndexChange={handleHoverIndexChange}
         />
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -482,8 +480,13 @@ export function CostTrendGrid({ dailySpend }: { dailySpend: DailySpendPoint[] })
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {METRICS.map((metric) => (
-        <CostTrendMetricCard key={metric.key} metric={metric} dailySpend={dailySpend} />
+      {METRICS.map((metric, index) => (
+        <CostTrendMetricCard
+          key={metric.key}
+          figureLabel={`Figure ${4 + index}.`}
+          metric={metric}
+          dailySpend={dailySpend}
+        />
       ))}
     </div>
   )

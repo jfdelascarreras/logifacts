@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { paper } from '@/app/components/analysis/premium-paper-styles'
 import { cn } from '@/lib/utils'
 import type { SpendShipmentPeriodMatrix } from '@/lib/premium-analysis/period-averages-matrix'
 
@@ -305,21 +305,24 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
   }
 
   return (
-    <Card className="border-accent/25 bg-card">
-      <CardHeader className="pb-3">
+    <section className={paper.section}>
+      <header className={paper.sectionHeader}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>Average spend &amp; shipments</CardTitle>
-            <CardDescription>
-              Matrix by year, calendar month, and ISO week of year. Each cell shows avg spend and avg shipments per
-              active day side by side. Years run low to high. Shipments are distinct tracking or reference keys.
-            </CardDescription>
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Table 9.</span>
+              Average spend and shipments
+            </h2>
+            <p className={paper.sectionDesc}>
+              Matrix by year, calendar month, and ISO week. Each cell reports average spend and shipments per active
+              day. Shipments are distinct tracking or reference keys.
+            </p>
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="shrink-0 border-accent/40 text-accent hover:bg-accent/10"
+            className={cn(paper.btnOutline, 'shrink-0 font-sans')}
             onClick={() => void exportExcel()}
             disabled={exporting}
           >
@@ -341,17 +344,17 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
             {exportError}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2 pt-2">
+        <div className="flex flex-wrap items-center gap-2 pt-2 font-sans">
           {(['year', 'month', 'week'] as const).map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => setView(v)}
               className={cn(
-                'rounded-md border px-3 py-1.5 text-xs font-medium capitalize transition-colors',
+                'border px-3 py-1.5 text-xs capitalize transition-colors',
                 view === v
-                  ? 'border-accent bg-accent/15 text-foreground'
-                  : 'border-border text-muted-foreground hover:border-accent/40 hover:text-foreground'
+                  ? 'border-foreground bg-muted/40 text-foreground'
+                  : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground'
               )}
             >
               {v === 'week' ? 'Week of year' : v}
@@ -370,8 +373,8 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
             </span>
           ) : null}
         </div>
-      </CardHeader>
-      <CardContent>
+      </header>
+      <div className={paper.sectionBody}>
         {view === 'year' ? (
           <div className="overflow-x-auto rounded-md border border-border" tabIndex={0} role="region" aria-label="Year averages table">
             <table className="w-full min-w-[640px] text-left text-sm">
@@ -501,7 +504,7 @@ export function SpendShipmentPeriodMatrixCard({ matrix }: Props) {
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

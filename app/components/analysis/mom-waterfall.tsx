@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildMomWaterfallSegments } from '@/lib/premium-analysis/mom-waterfall-segments'
 import { waterfallBucketTaxonomy } from '@/lib/premium-analysis/waterfall-bucket-taxonomy'
+import { paper } from '@/app/components/analysis/premium-paper-styles'
+import { cn } from '@/lib/utils'
 
 type MonthRow = {
   month: string
@@ -146,34 +147,37 @@ export function MomWaterfall({ monthlySpend }: Props) {
   const biggestPct = fmtPct(biggestBar.delta, biggestBar.base)
 
   const descLine = [
-    `${currentMonth} vs ${previousMonth}`,
-    'Hover a bar for mapping taxonomy details (see docs/MAPPING_TAXONOMY_TREE.md).',
+    `Comparison period: ${currentMonth} versus ${previousMonth}.`,
+    'Pointer over a bar reveals mapping taxonomy (see docs/MAPPING_TAXONOMY_TREE.md).',
     Math.abs(totalDelta) > 0
-      ? `Biggest driver: ${biggestBar.label} (${biggestSign}${fmtAmt(Math.abs(biggestBar.delta))}${biggestPct ? `, ${biggestPct}` : ''})`
+      ? `Largest component: ${biggestBar.label} (${biggestSign}${fmtAmt(Math.abs(biggestBar.delta))}${biggestPct ? `; ${biggestPct}` : ''}).`
       : null,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(' ')
 
   const hovered = hoveredBar !== null ? bars[hoveredBar] : null
   const taxonomy = hovered ? waterfallBucketTaxonomy(hovered.label) : null
 
   return (
-    <Card className="border-accent/25 bg-card">
-      <CardHeader>
+    <section className={paper.section}>
+      <header className={paper.sectionHeader}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle>
-              What Drove the {totalSign}
+            <h2 className={paper.sectionTitle}>
+              <span className={paper.sectionNumber}>Figure 1.</span>
+              Month-over-month decomposition of total cost
+            </h2>
+            <p className={paper.sectionDesc}>
+              Net change of {totalSign}
               {fmtAmt(Math.abs(totalDelta))}
-              {totalPctStr ? ` (${totalPctStr})` : ''} MoM Change?
-            </CardTitle>
-            <CardDescription className="mt-1">{descLine}</CardDescription>
+              {totalPctStr ? ` (${totalPctStr})` : ''} attributed to charge buckets. {descLine}
+            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 font-sans">
             <select
               aria-label="Current month"
-              className="h-7 rounded border border-input bg-background px-2 py-0 text-xs text-foreground shadow-sm"
+              className={paper.control}
               value={safeCurrentIdx}
               onChange={(e) => {
                 const v = Number(e.target.value)
@@ -193,7 +197,7 @@ export function MomWaterfall({ monthlySpend }: Props) {
             <span className="shrink-0 text-xs text-muted-foreground">vs</span>
             <select
               aria-label="Prior month"
-              className="h-7 rounded border border-input bg-background px-2 py-0 text-xs text-foreground shadow-sm"
+              className={paper.control}
               value={safePrevIdx}
               onChange={(e) => {
                 const v = Number(e.target.value)
@@ -212,8 +216,9 @@ export function MomWaterfall({ monthlySpend }: Props) {
             </select>
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
+      </header>
+      <div className={paper.sectionBody}>
+        <div className={paper.figureBox}>
         <svg
           viewBox={`0 0 ${VW} ${VH}`}
           width="100%"
@@ -262,7 +267,7 @@ export function MomWaterfall({ monthlySpend }: Props) {
             const yLow = toY(Math.min(bar.start, bar.end))
             const h = Math.max(yLow - yHigh, 2)
             const isPositive = bar.delta >= 0
-            const fill = isPositive ? '#ef4444' : '#22c55e'
+            const fill = isPositive ? 'var(--chart-2)' : 'var(--chart-3)'
             const isHovered = hoveredBar === i
             const labelY = isPositive ? yHigh - 7 : yLow + 13
 
@@ -296,8 +301,7 @@ export function MomWaterfall({ monthlySpend }: Props) {
                   width={barW}
                   height={h}
                   fill={fill}
-                  fillOpacity={isHovered ? 1 : 0.82}
-                  rx={3}
+                  fillOpacity={isHovered ? 1 : 0.85}
                 />
 
                 <text
@@ -327,13 +331,14 @@ export function MomWaterfall({ monthlySpend }: Props) {
             )
           })}
         </svg>
+        </div>
 
         <div aria-live="polite" className="mt-3 min-h-[5rem]">
           {hovered && taxonomy ? (
-            <div className="rounded-lg border border-border bg-muted/25 px-3 py-2.5 text-xs">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/60 pb-2">
+            <div className={cn(paper.alert, 'text-xs')}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
                 <p className="font-semibold text-foreground">{hovered.label}</p>
-                <p className={hovered.delta >= 0 ? 'font-medium text-red-500' : 'font-medium text-green-500'}>
+                <p className="font-medium" style={{ color: hovered.delta >= 0 ? 'var(--chart-2)' : 'var(--chart-3)' }}>
                   MoM {hovered.delta >= 0 ? '+' : '−'}
                   {fmtAmtFull(Math.abs(hovered.delta))}
                   {fmtPct(hovered.delta, hovered.base) ? ` (${fmtPct(hovered.delta, hovered.base)})` : ''}
@@ -375,18 +380,18 @@ export function MomWaterfall({ monthlySpend }: Props) {
               </p>
 
               {taxonomy.kpiNote ? (
-                <p className="mt-2 rounded-md border border-amber-200/60 bg-amber-50/50 px-2 py-1 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className={cn(paper.alert, 'mt-2 border-amber-600/30 bg-amber-50/40 text-amber-950 dark:bg-amber-950/25 dark:text-amber-100')}>
                   {taxonomy.kpiNote}
                 </p>
               ) : null}
             </div>
           ) : (
-            <p className="text-center text-xs text-muted-foreground">
-              Hover a bar to see mapping taxonomy for that bucket.
+            <p className={paper.figureNote}>
+              Select a bar to inspect the mapping taxonomy for that charge bucket.
             </p>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

@@ -1,12 +1,7 @@
 'use client'
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { paper } from '@/app/components/analysis/premium-paper-styles'
+import { cn } from '@/lib/utils'
 import type { PremiumParseIngestDiagnostics } from '@/lib/premium-analysis/analyze-parse-cache'
 
 function fmtUSD(n: number): string {
@@ -56,50 +51,53 @@ export function DataHealthCard({ diagnostics, totalCost }: Props) {
   }
 
   return (
-    <Card className={warnings.length ? 'border-amber-500/40 bg-amber-500/5' : 'border-border'}>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Data health</CardTitle>
-        <CardDescription>
-          Ingest quality for this analysis run — mapping coverage, tracking, and parser versions.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <p className="text-muted-foreground">Charge lines</p>
-          <p className="font-medium tabular-nums">{diagnostics.linesTotal.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">Mapped</p>
-          <p className="font-medium tabular-nums">
-            {fmtPct(mappedPct)} ({diagnostics.linesMapped.toLocaleString()})
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">Shipments w/ tracking</p>
-          <p className="font-medium tabular-nums">
-            {fmtPct(trackingPct)} ({diagnostics.shipmentsTotal.toLocaleString()} total)
-          </p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">Parser versions</p>
-          <p className="font-medium">
-            {diagnostics.parseVersions.length
-              ? diagnostics.parseVersions.join(', ')
-              : 'legacy'}
-          </p>
-        </div>
+    <section className={cn(paper.section, warnings.length && 'border-amber-600/30')}>
+      <header className={paper.sectionHeader}>
+        <h2 className={paper.sectionTitle}>
+          <span className={paper.sectionNumber}>§0</span>
+          Data quality
+        </h2>
+        <p className={paper.sectionDesc}>
+          Ingest diagnostics: mapping coverage, tracking completeness, and parser versions for this run.
+        </p>
+      </header>
+      <div className={paper.sectionBody}>
+        <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Charge lines</dt>
+            <dd className="font-medium tabular-nums">{diagnostics.linesTotal.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Mapped</dt>
+            <dd className="font-medium tabular-nums">
+              {fmtPct(mappedPct)} ({diagnostics.linesMapped.toLocaleString()})
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Shipments w/ tracking</dt>
+            <dd className="font-medium tabular-nums">
+              {fmtPct(trackingPct)} ({diagnostics.shipmentsTotal.toLocaleString()} total)
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Parser versions</dt>
+            <dd className="font-medium">
+              {diagnostics.parseVersions.length ? diagnostics.parseVersions.join(', ') : 'legacy'}
+            </dd>
+          </div>
+        </dl>
         {warnings.length ? (
-          <ul className="sm:col-span-2 lg:col-span-4 list-disc space-y-1 pl-4 text-amber-900 dark:text-amber-100">
+          <ul className="mt-4 list-disc space-y-1 border-t border-border pt-3 pl-5 text-xs text-muted-foreground">
             {warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
         ) : (
-          <p className="sm:col-span-2 lg:col-span-4 text-muted-foreground">
-            Coverage looks good for this dataset.
+          <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+            Coverage looks adequate for this dataset.
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }
