@@ -11,11 +11,6 @@ export default async function PricingPage() {
 
   const originZip = String(user.user_metadata?.origin_zip ?? '')
 
-  const { data: productRows } = await supabase
-    .from('user_products')
-    .select('id, name, weight_lbs, length_in, width_in, height_in, created_at, updated_at')
-    .order('name')
-
   return (
     <AuthenticatedShell
       title="LogiFacts Shipment Calculator"
@@ -31,7 +26,7 @@ export default async function PricingPage() {
           to prefill lane inputs.
         </div>
       )}
-      <ShipmentQuoteForm defaultOriginZip={originZip} initialProducts={productRows ?? []} />
+      <ShipmentQuoteForm defaultOriginZip={originZip} />
     </AuthenticatedShell>
   )
 }
