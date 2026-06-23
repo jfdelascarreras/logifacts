@@ -92,39 +92,78 @@ export function buildMastermindConfirmationEmail(
 
   const html = `<!DOCTYPE html>
 <html lang="en">
-  <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#102033;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:#dbe6ef;font-family:Arial,Helvetica,sans-serif;color:#12284b;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#dbe6ef;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe4f0;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #a2c7e2;">
+
+            <!-- Header -->
             <tr>
-              <td style="padding:28px 28px 12px;background:linear-gradient(135deg,#0f2744,#1f5f99);color:#ffffff;">
-                <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.85;">LogiFacts Mastermind</p>
-                <h1 style="margin:0;font-size:28px;line-height:1.25;">You're signed up</h1>
+              <td style="background:#12284b;padding:28px 32px 24px;">
+                <!-- Wordmark -->
+                <p style="margin:0 0 20px;font-size:22px;font-weight:800;letter-spacing:-0.5px;line-height:1;">
+                  <span style="color:#ffffff;">Logi</span><span style="color:#f0493e;">Facts</span>
+                </p>
+                <!-- Label + headline -->
+                <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#a2c7e2;font-weight:600;">Mastermind · Confirmation</p>
+                <h1 style="margin:0;font-size:30px;font-weight:800;line-height:1.2;color:#ffffff;">You&rsquo;re in, ${firstName}.</h1>
               </td>
             </tr>
+
+            <!-- Date strip -->
             <tr>
-              <td style="padding:28px;">
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${firstName},</p>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">
-                  Your spot is saved for our free ${MASTERMIND_SESSION_DURATION} Mastermind conversation on
-                  <strong>${MASTERMIND_SESSION_WHEN}</strong>.
-                </p>
-                <p style="margin:0 0 20px;font-size:16px;line-height:1.6;">
-                  Use the Teams link below to join live. We also attached a calendar invite so you can add the session to your calendar.
-                </p>
-                <p style="margin:0 0 24px;">
-                  <a href="${MASTERMIND_TEAMS_JOIN_URL}" style="display:inline-block;background:#1f5f99;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:999px;font-size:16px;font-weight:700;">
-                    Join on Microsoft Teams
-                  </a>
-                </p>
-                <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#516579;">If the button does not work, copy this link:</p>
-                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;word-break:break-all;">
-                  <a href="${MASTERMIND_TEAMS_JOIN_URL}" style="color:#1f5f99;">${MASTERMIND_TEAMS_JOIN_URL}</a>
-                </p>
-                <p style="margin:0;font-size:16px;line-height:1.6;">See you there,<br />The LogiFacts team</p>
+              <td style="background:#f0493e;padding:12px 32px;">
+                <p style="margin:0;font-size:14px;font-weight:700;color:#ffffff;letter-spacing:0.04em;">&#128197;&nbsp; ${MASTERMIND_SESSION_WHEN} &nbsp;&middot;&nbsp; ${MASTERMIND_SESSION_DURATION}</p>
               </td>
             </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding:32px 32px 24px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#12284b;">
+                  Your spot is confirmed for our free Mastermind conversation. We&rsquo;ll explore how to re-imagine the way you measure your business &mdash; what&rsquo;s working, what isn&rsquo;t, and how to close the gap.
+                </p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#12284b;">
+                  Use the button below to join on Teams. A calendar invite (.ics) is attached so you can save the session right now.
+                </p>
+
+                <!-- CTA -->
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 28px;">
+                  <tr>
+                    <td style="border-radius:8px;background:#f0493e;">
+                      <a href="${MASTERMIND_TEAMS_JOIN_URL}" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:0.02em;">
+                        Join on Microsoft Teams &#8594;
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Fallback link -->
+                <p style="margin:0 0 4px;font-size:13px;color:#274673;">Can&rsquo;t click the button? Copy this link:</p>
+                <p style="margin:0 0 32px;font-size:13px;word-break:break-all;">
+                  <a href="${MASTERMIND_TEAMS_JOIN_URL}" style="color:#f0493e;text-decoration:underline;">teams.microsoft.com &rarr; LogiFacts Mastermind</a>
+                </p>
+
+                <!-- Divider -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
+                  <tr><td style="border-top:1px solid #dbe6ef;"></td></tr>
+                </table>
+
+                <p style="margin:0;font-size:15px;line-height:1.6;color:#12284b;">See you there,<br /><strong>The LogiFacts team</strong></p>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#12284b;padding:16px 32px;">
+                <p style="margin:0;font-size:12px;color:#a2c7e2;text-align:center;">
+                  &copy; 2026 LogiFacts &nbsp;&middot;&nbsp;
+                  <a href="https://logifacts.com" style="color:#a2c7e2;text-decoration:none;">logifacts.com</a>
+                </p>
+              </td>
+            </tr>
+
           </table>
         </td>
       </tr>
