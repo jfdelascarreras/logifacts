@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   CalculatorHero,
@@ -28,7 +28,6 @@ import {
   type UPSRateType,
   type UPSService,
 } from '@/lib/pricing'
-import { mapUserProductRow, productToDimensionStrings, type UserProductRow } from '@/lib/products/user-product'
 import { cn } from '@/lib/utils'
 
 const UPS_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
@@ -43,17 +42,11 @@ const FEDEX_SERVICES: FedExService[] = [
 
 type Props = {
   defaultOriginZip?: string
-  initialProducts?: UserProductRow[]
 }
 
 type EstimateBreakdown = UPSRateBreakdown | FedExRateBreakdown
 
-export function ShipmentQuoteForm({ defaultOriginZip = '', initialProducts = [] }: Props) {
-  const savedProducts = useMemo(
-    () => [...initialProducts].map(mapUserProductRow).sort((a, b) => a.name.localeCompare(b.name)),
-    [initialProducts]
-  )
-  const [productSelection, setProductSelection] = useState<'custom' | string>('custom')
+export function ShipmentQuoteForm({ defaultOriginZip = '' }: Props) {
   const [showUps, setShowUps] = useState(true)
   const [showFedEx, setShowFedEx] = useState(true)
   const [weightLbs, setWeightLbs] = useState('')
@@ -76,23 +69,6 @@ export function ShipmentQuoteForm({ defaultOriginZip = '', initialProducts = [] 
   const [upsResult, setUpsResult] = useState<UPSRateBreakdown | null>(null)
   const [fedexResult, setFedexResult] = useState<FedExRateBreakdown | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-
-  const fieldsLocked = productSelection !== 'custom'
-  const selectedProduct = savedProducts.find((p) => p.id === productSelection) ?? null
-
-  useEffect(() => {
-    if (productSelection === 'custom') return
-    const product = savedProducts.find((p) => p.id === productSelection)
-    if (!product) {
-      setProductSelection('custom')
-      return
-    }
-    const dims = productToDimensionStrings(product)
-    setWeightLbs(dims.weightLbs)
-    setLength(dims.length)
-    setWidth(dims.width)
-    setHeight(dims.height)
-  }, [productSelection, savedProducts])
 
   useEffect(() => {
     setOriginZip(defaultOriginZip)
@@ -223,33 +199,6 @@ export function ShipmentQuoteForm({ defaultOriginZip = '', initialProducts = [] 
 
           <SectionPanel step="02" title="Lane & weight" description="Origin, destination, and billable inputs">
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="my-products" className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  My products
-                </Label>
-                <select
-                  id="my-products"
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={productSelection}
-                  onChange={(e) => setProductSelection(e.target.value)}
-                >
-                  <option value="custom">Custom</option>
-                  {savedProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </select>
-                {savedProducts.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    No saved products yet. Add them in{' '}
-                    <a href="/protected" className="font-medium text-primary underline-offset-2 hover:underline">
-                      My Profile
-                    </a>
-                    .
-                  </p>
-                ) : null}
-              </div>
               <RouteLane
                 originZip={originZip}
                 destinationZip={destinationZip}
@@ -269,8 +218,6 @@ export function ShipmentQuoteForm({ defaultOriginZip = '', initialProducts = [] 
                     placeholder="5.0"
                     value={weightLbs}
                     onChange={e => setWeightLbs(e.target.value)}
-                    readOnly={fieldsLocked}
-                    disabled={fieldsLocked}
                     className="font-mono"
                   />
                 </div>
@@ -292,22 +239,13 @@ export function ShipmentQuoteForm({ defaultOriginZip = '', initialProducts = [] 
                       className="font-mono"
                       value={value}
                       onChange={e => set(e.target.value)}
-                      readOnly={fieldsLocked}
-                      disabled={fieldsLocked}
                     />
                   </div>
                 ))}
               </div>
-              {fieldsLocked && selectedProduct ? (
-                <p className="text-[11px] text-muted-foreground">
-                  Using <span className="font-medium text-foreground">{selectedProduct.name}</span>. Switch to{' '}
-                  <span className="font-medium text-foreground">Custom</span> to edit manually.
-                </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  Dimensions optional in Custom mode — used for dimensional weight (DIM).
-                </p>
-              )}
+              <p className="text-[11px] text-muted-foreground">
+                Dimensions optional — used for dimensional weight (DIM).
+              </p>
             </div>
           </SectionPanel>
 

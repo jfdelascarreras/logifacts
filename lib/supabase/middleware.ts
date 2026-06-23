@@ -44,7 +44,9 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/api/mastermind/') ||
-    pathname.startsWith('/api/internal/')
+    pathname.startsWith('/api/internal/') ||
+    pathname.startsWith('/api/rate-calculator') ||
+    pathname.startsWith('/api/admin/')
 
   if (!user && !isPublicRoute) {
     // no user, potentially respond by redirecting the user to the login page

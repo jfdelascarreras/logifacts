@@ -184,7 +184,7 @@ export function MastermindSection({
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {wasAlreadyRegistered
                     ? `Your registration is updated. We'll see you ${MASTERMIND_SESSION_WHEN}.`
-                    : `Your spot is saved for ${MASTERMIND_SESSION_WHEN}. Here are your session details below.`}
+                    : `Your spot is saved for ${MASTERMIND_SESSION_WHEN}. Check your inbox for the calendar invite and Teams link.`}
                 </p>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
