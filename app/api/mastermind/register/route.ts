@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { registerMastermindAttendee } from '@/lib/mastermind/register-attendee'
+import { sendMastermindConfirmationEmail } from '@/lib/mastermind/send-confirmation-email'
 import { createClient } from '@/lib/supabase/server'
 
 type RegisterBody = {
@@ -56,9 +57,30 @@ export async function POST(request: Request) {
       userId: user?.id ?? null,
     })
 
+    let emailDelivery:
+      | { sent: true; provider: 'resend'; id: string }
+      | { sent: false; reason: string; message: string }
+      | null = null
+
+    if (!registration.alreadyRegistered) {
+      const delivery = await sendMastermindConfirmationEmail({ email, fullName })
+      emailDelivery = delivery.sent
+        ? delivery
+        : {
+            sent: false,
+            reason: delivery.reason,
+            message: delivery.message,
+          }
+
+      if (!delivery.sent && process.env.NODE_ENV !== 'production') {
+        console.warn('[mastermind] confirmation email not sent:', delivery.message)
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       registration,
+      emailDelivery,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to save registration.'

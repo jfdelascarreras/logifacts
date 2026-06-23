@@ -38,6 +38,18 @@ function baseUrl(): string {
 }
 
 export async function POST(req: Request) {
+  try {
+    return await handler(req)
+  } catch (err) {
+    console.error('[rate-calculator] unhandled error:', err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Unexpected server error.' },
+      { status: 500 },
+    )
+  }
+}
+
+async function handler(req: Request) {
   const supabase = createAdminClient()
 
   // ── Auth ────────────────────────────────────────────────────────────────────

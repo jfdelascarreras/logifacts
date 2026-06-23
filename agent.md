@@ -173,6 +173,8 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-anon-key
 SUPABASE_URL=https://[your-project].supabase.co     # seed script
 SUPABASE_SERVICE_KEY=your-service-role-key           # seed script + DELETE /api/account (close account)
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key      # alias accepted by close-account API
+RESEND_API_KEY=re_xxxxxxxx                           # mastermind confirmation emails
+RESEND_FROM="LogiFacts <hello@yourdomain.com>"       # verified sender domain in Resend
 MASTER_MAPPING_XLSX=./path/to/mapping-workbook.xlsx  # optional, for seed
 ```
 

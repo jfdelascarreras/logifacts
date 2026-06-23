@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },
   { label: 'My Profile', href: '/protected' },
+  { label: 'Customers', href: '/dashboard/customers' },
 ]
 
 export function AuthSidebar() {

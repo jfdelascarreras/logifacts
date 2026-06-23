@@ -12,6 +12,10 @@ scripts/_*
 # Personal / non-project files
 email-signature.html
 
+# Stray pnpm/next artifacts
+next
+logifacts@*
+
 # Local-only — not deployed with the web app
 outputs/
 Invoices skills/examples/
