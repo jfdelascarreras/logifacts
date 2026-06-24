@@ -109,15 +109,12 @@ export function InvoiceUploadPanel() {
   async function uploadOne(item: QueuedFile): Promise<boolean> {
     updateItem(item.id, { state: 'uploading' })
     try {
-      const MAX_BYTES = 4 * 1024 * 1024 // 4 MB — Vercel Serverless payload limit is 4.5 MB
-      if (item.file.size > MAX_BYTES) {
-        throw new Error(`File is too large (${(item.file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 4 MB.`)
-      }
       const form = new FormData()
       form.append('file', item.file)
       const res = await fetch('/api/invoices/upload', { method: 'POST', body: form })
       if (!res.ok) {
         const text = await res.text()
+        console.error('[upload] non-ok response', res.status, text)
         let message = `Upload failed (${res.status})`
         try { message = (JSON.parse(text) as { error?: string }).error ?? message } catch { message = text || message }
         throw new Error(message)
