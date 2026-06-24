@@ -12,6 +12,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 import { PREMIUM_ANALYSIS_UPDATED } from '@/lib/premium-analysis-events'
 import { Badge } from '@/components/ui/badge'
@@ -109,9 +110,30 @@ export function InvoiceUploadPanel() {
   async function uploadOne(item: QueuedFile): Promise<boolean> {
     updateItem(item.id, { state: 'uploading' })
     try {
-      const form = new FormData()
-      form.append('file', item.file)
-      const res = await fetch('/api/invoices/upload', { method: 'POST', body: form })
+      // Files >= 4 MB are staged via Supabase Storage to bypass Vercel's
+      // 4.5 MB function payload limit. Smaller files go direct (FormData).
+      const STAGE_THRESHOLD = 4 * 1024 * 1024
+      let res: Response
+
+      if (item.file.size >= STAGE_THRESHOLD) {
+        const supabase = createClient()
+        const safeName = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const storagePath = `${crypto.randomUUID()}-${safeName}`
+        const { error: storageError } = await supabase.storage
+          .from('invoice-staging')
+          .upload(storagePath, item.file)
+        if (storageError) throw new Error(`Staging failed: ${storageError.message}`)
+        res = await fetch('/api/invoices/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storagePath }),
+        })
+      } else {
+        const form = new FormData()
+        form.append('file', item.file)
+        res = await fetch('/api/invoices/upload', { method: 'POST', body: form })
+      }
+
       if (!res.ok) {
         const text = await res.text()
         console.error('[upload] non-ok response', res.status, text)
