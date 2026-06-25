@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { calcFedEx, calcUPS, type CalcParams, type Dimensions } from '@/lib/rate-calculator/calc'
 import { loadUserContractDiscounts } from '@/lib/profile/contract-discounts'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { baseUrl } from '@/lib/api/base-url'
 import type { FedExService, UPSService } from '@/lib/pricing'
 
 type JobPayload = {
@@ -22,12 +23,6 @@ type JobPayload = {
   ups_service: UPSService
   fedex_service: FedExService
   callback_url: string
-}
-
-function baseUrl(): string {
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3001'
 }
 
 export async function POST(req: Request) {
@@ -51,17 +46,22 @@ export async function POST(req: Request) {
   const payload = JSON.parse(rawBody) as JobPayload
   const supabase = createAdminClient()
 
-  // ── Idempotency: if already completed, just enqueue delivery ─────────────
+  // ── Idempotency: skip recalculation if already in a terminal state ───────
   const { data: existing } = await supabase
     .from('rate_requests')
-    .select('status')
+    .select('status, delivered_at')
     .eq('id', payload.request_id)
-    .single()
+    .maybeSingle()
 
-  if (existing?.status === 'completed') {
-    await enqueueDelivery(payload.request_id, payload.callback_url, payload.key_hash)
+  if (existing?.status === 'completed' || existing?.status === 'delivery_failed') {
+    // Already calculated — only re-enqueue delivery if not yet delivered.
+    if (!existing.delivered_at) {
+      await enqueueDelivery(payload.request_id, payload.callback_url, payload.key_hash)
+    }
     return NextResponse.json({ ok: true })
   }
+
+  // 'error' status means a previous attempt failed the calculation; re-run it.
 
   // ── Load contract discounts ───────────────────────────────────────────────
   const contractDiscounts = await loadUserContractDiscounts(supabase, {
@@ -99,14 +99,20 @@ export async function POST(req: Request) {
   }
 
   // ── Persist result ────────────────────────────────────────────────────────
-  await supabase
+  const { error: updateErr } = await supabase
     .from('rate_requests')
     .update({
       status: anySuccess ? 'completed' : 'error',
-      breakdown: { ups: upsResult, fedex: fedexResult } as object,
+      breakdown: { ups: upsResult, fedex: fedexResult, warnings } as object,
       completed_at: new Date().toISOString(),
     })
     .eq('id', payload.request_id)
+
+  if (updateErr) {
+    // Return 5xx so QStash retries — do NOT enqueue delivery with stale DB state.
+    console.error('[rate-calculate] failed to persist result:', updateErr)
+    return NextResponse.json({ error: 'Failed to persist result.' }, { status: 500 })
+  }
 
   // ── Enqueue webhook delivery ──────────────────────────────────────────────
   await enqueueDelivery(payload.request_id, payload.callback_url, payload.key_hash)

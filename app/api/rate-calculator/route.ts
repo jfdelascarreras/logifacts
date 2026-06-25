@@ -6,13 +6,24 @@ import { NextResponse } from 'next/server'
 import { calcFedEx, calcUPS, type CalcParams, type Dimensions } from '@/lib/rate-calculator/calc'
 import { loadUserContractDiscounts } from '@/lib/profile/contract-discounts'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { baseUrl, hashApiKey } from '@/lib/api/base-url'
 import type { FedExService, UPSService } from '@/lib/pricing'
 
-const ratelimit = new Ratelimit({
-  redis: Redis.fromEnv(),
-  limiter: Ratelimit.slidingWindow(100, '1 m'),
-  prefix: 'rl:rate-calculator',
-})
+// Lazy-init: Redis.fromEnv() throws at import time if env vars are absent.
+// Initialize on first use so missing Redis only degrades rate-limiting (fail-open),
+// rather than crashing the entire module and returning 500 for every request.
+let _ratelimit: Ratelimit | null = null
+function getRatelimit(): Ratelimit | null {
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) return null
+  if (!_ratelimit) {
+    _ratelimit = new Ratelimit({
+      redis: Redis.fromEnv(),
+      limiter: Ratelimit.slidingWindow(100, '1 m'),
+      prefix: 'rl:rate-calculator',
+    })
+  }
+  return _ratelimit
+}
 
 const VALID_UPS_SERVICES: UPSService[] = ['ground', '3day', '2day', '2day_am', 'nda_saver', 'nda']
 const VALID_FEDEX_SERVICES: FedExService[] = [
@@ -29,12 +40,6 @@ async function hashKey(raw: string): Promise<string> {
   return Array.from(new Uint8Array(buf))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
-}
-
-function baseUrl(): string {
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3001'
 }
 
 export async function POST(req: Request) {
@@ -62,7 +67,7 @@ async function handler(req: Request) {
   }
 
   const rawKey = authHeader.slice(7).trim()
-  const keyHash = await hashKey(rawKey)
+  const keyHash = await hashApiKey(rawKey)
 
   const { data: keyRow } = await supabase
     .from('api_keys')
@@ -93,24 +98,27 @@ async function handler(req: Request) {
   // ── Rate limit ───────────────────────────────────────────────────────────────
   let rlRemaining: number | null = null
   let rlReset: number | null = null
-  try {
-    const { success, remaining, reset } = await ratelimit.limit(keyRow.id)
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Max 100 requests per minute per API key.' },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': reset.toString(),
+  const rl = getRatelimit()
+  if (rl) {
+    try {
+      const { success, remaining, reset } = await rl.limit(keyRow.id)
+      if (!success) {
+        return NextResponse.json(
+          { error: 'Rate limit exceeded. Max 100 requests per minute per API key.' },
+          {
+            status: 429,
+            headers: {
+              'X-RateLimit-Remaining': '0',
+              'X-RateLimit-Reset': reset.toString(),
+            },
           },
-        },
-      )
+        )
+      }
+      rlRemaining = remaining
+      rlReset = reset
+    } catch {
+      // Redis unavailable — fail open
     }
-    rlRemaining = remaining
-    rlReset = reset
-  } catch {
-    // Redis unavailable — fail open
   }
 
   // ── Parse body ───────────────────────────────────────────────────────────────
@@ -231,27 +239,37 @@ async function handler(req: Request) {
     }
 
     const qstash = new QStashClient({ token: process.env.QSTASH_TOKEN!, baseUrl: process.env.QSTASH_URL })
-    await qstash.publishJSON({
-      url: `${baseUrl()}/api/v1/jobs/rate-calculate`,
-      body: {
-        request_id: reqRow.id,
-        customer_id: keyRow.customer_id,
-        user_id: customer.user_id,
-        key_hash: keyHash,
-        weight_lbs: rawWeight,
-        dimensions_in: dimensionsIn,
-        origin_zip: rawOriginZip,
-        destination_zip: rawDestZip,
-        residential: isResidential,
-        non_standard: isNonStandard,
-        address_correction: isAddressCorrection,
-        markup_pct: markupPct,
-        ups_service: upsService,
-        fedex_service: fedexService,
-        callback_url: callbackUrl,
-      },
-      retries: 2,
-    })
+    try {
+      await qstash.publishJSON({
+        url: `${baseUrl()}/api/v1/jobs/rate-calculate`,
+        body: {
+          request_id: reqRow.id,
+          customer_id: keyRow.customer_id,
+          user_id: customer.user_id,
+          key_hash: keyHash,
+          weight_lbs: rawWeight,
+          dimensions_in: dimensionsIn,
+          origin_zip: rawOriginZip,
+          destination_zip: rawDestZip,
+          residential: isResidential,
+          non_standard: isNonStandard,
+          address_correction: isAddressCorrection,
+          markup_pct: markupPct,
+          ups_service: upsService,
+          fedex_service: fedexService,
+          callback_url: callbackUrl,
+        },
+        retries: 2,
+      })
+    } catch (err) {
+      console.error('[rate-calculator] QStash publish failed:', err)
+      // Roll back the pending row so it doesn't orphan.
+      await supabase.from('rate_requests').update({ status: 'error' }).eq('id', reqRow.id)
+      return NextResponse.json(
+        { error: 'Failed to queue rate calculation. Please retry.' },
+        { status: 503 },
+      )
+    }
 
     return NextResponse.json(
       { request_id: reqRow.id, status: 'pending' },

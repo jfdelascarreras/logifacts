@@ -2,21 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { getAdminContext } from '@/lib/admin/getAdminContext'
 import { createAdminClient } from '@/lib/supabase/admin'
-
-function generateKey(): string {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-async function hashKey(raw: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+import { generateApiKey, hashApiKey } from '@/lib/api/base-url'
 
 export async function POST(req: Request) {
   const admin = await getAdminContext()
@@ -65,8 +51,8 @@ export async function POST(req: Request) {
   const userId = inviteData.user.id
 
   // Generate and hash the API key before touching the DB — rollback is simpler.
-  const plaintext = generateKey()
-  const keyHash = await hashKey(plaintext)
+  const plaintext = generateApiKey()
+  const keyHash = await hashApiKey(plaintext)
   const keyPrefix = plaintext.slice(0, 8)
 
   const dims =
