@@ -53,8 +53,8 @@ export async function POST(req: Request) {
     .single()
 
   if (!row) {
-    // Request row missing — nothing to deliver, stop retrying
-    return NextResponse.json({ error: 'Request not found.' }, { status: 200 })
+    // 404 tells QStash this is a permanent failure — it won't retry 4xx.
+    return NextResponse.json({ error: 'Request not found.' }, { status: 404 })
   }
 
   if (row.delivered_at) {
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   }
 
   // ── Track this attempt ────────────────────────────────────────────────────
-  const attempt = (row.delivery_attempts as number) + 1
+  const attempt = ((row.delivery_attempts as number) ?? 0) + 1
   await supabase
     .from('rate_requests')
     .update({ delivery_attempts: attempt })
@@ -118,8 +118,10 @@ export async function POST(req: Request) {
   }
 
   // ── Delivery failed ───────────────────────────────────────────────────────
-  // Check QStash retry headers to know if this is the final attempt.
-  const retriesRemaining = parseInt(req.headers.get('Upstash-Retry-Remaining') ?? '0', 10)
+  // QStash omits Upstash-Retry-Remaining on the first attempt; null means
+  // "not the final attempt". Only treat 0 (explicit) as the last retry.
+  const retryHeader = req.headers.get('Upstash-Retry-Remaining')
+  const retriesRemaining = retryHeader !== null ? parseInt(retryHeader, 10) : null
 
   if (retriesRemaining === 0) {
     // All attempts exhausted — mark permanently failed

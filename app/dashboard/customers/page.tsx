@@ -92,7 +92,7 @@ export default async function CustomersPage() {
 
   return (
     <div className="min-h-svh bg-background md:flex">
-      <AuthSidebar />
+      <AuthSidebar isAdmin={true} />
       <main className="flex-1 p-6 md:p-8">
         <CustomersShell customers={rows} />
       </main>

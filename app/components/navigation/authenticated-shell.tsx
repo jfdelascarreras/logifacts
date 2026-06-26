@@ -1,4 +1,5 @@
 import { AuthSidebar } from '@/app/components/navigation/auth-sidebar'
+import { getAdminContext } from '@/lib/admin/getAdminContext'
 
 interface AuthenticatedShellProps {
   title: string
@@ -6,10 +7,12 @@ interface AuthenticatedShellProps {
   children: React.ReactNode
 }
 
-export function AuthenticatedShell({ title, subtitle, children }: AuthenticatedShellProps) {
+export async function AuthenticatedShell({ title, subtitle, children }: AuthenticatedShellProps) {
+  const admin = await getAdminContext()
+
   return (
     <div className="min-h-svh bg-background md:flex">
-      <AuthSidebar />
+      <AuthSidebar isAdmin={!!admin} />
 
       <div className="flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <header className="mb-6">

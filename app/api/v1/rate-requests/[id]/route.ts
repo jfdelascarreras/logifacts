@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-
-async function hashKey(raw: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+import { hashApiKey } from '@/lib/api/base-url'
 
 export async function GET(
   req: Request,
@@ -25,7 +19,7 @@ export async function GET(
     )
   }
 
-  const keyHash = await hashKey(authHeader.slice(7).trim())
+  const keyHash = await hashApiKey(authHeader.slice(7).trim())
 
   const { data: keyRow } = await supabase
     .from('api_keys')

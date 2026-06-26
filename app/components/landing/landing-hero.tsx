@@ -1,25 +1,12 @@
 import Link from 'next/link'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
-import { MastermindSection } from '@/app/components/landing/mastermind-section'
 import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 
 const SURVEY_URL = 'https://landbot.site/v3/H-3013420-OC0MMSVJBV97BTKR/index.html'
 
-type LandingHeroProps = {
-  initialFullName?: string
-  initialCompanyName?: string
-  initialEmail?: string
-  isSignedIn?: boolean
-}
-
-export function LandingHero({
-  initialFullName = '',
-  initialCompanyName = '',
-  initialEmail = '',
-  isSignedIn = false,
-}: LandingHeroProps) {
+export function LandingHero() {
   return (
     <div className="relative isolate min-h-screen min-h-[100dvh] overflow-x-hidden bg-background text-foreground">
       {/* Blobs attach to this full-viewport shell so blur isn’t clipped to content height */}
@@ -94,13 +81,6 @@ export function LandingHero({
               ))}
             </div>
         </section>
-
-        <MastermindSection
-          initialFullName={initialFullName}
-          initialCompanyName={initialCompanyName}
-          initialEmail={initialEmail}
-          isSignedIn={isSignedIn}
-        />
 
       </div>
     </div>

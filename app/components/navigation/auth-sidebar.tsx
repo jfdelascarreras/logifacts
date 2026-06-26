@@ -17,11 +17,12 @@ const NAV_ITEMS = [
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },
   { label: 'My Profile', href: '/protected' },
-  { label: 'Customers', href: '/dashboard/customers' },
+  { label: 'Customers', href: '/dashboard/customers', adminOnly: true },
 ]
 
-export function AuthSidebar() {
+export function AuthSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
+  const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
   return (
     <aside className="w-full border-b border-border bg-card/50 p-4 md:min-h-svh md:w-64 md:border-b-0 md:border-r md:p-6">
@@ -35,7 +36,7 @@ export function AuthSidebar() {
       </div>
 
       <nav className="flex flex-wrap gap-2 md:flex-col md:gap-1">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname === item.href
 
           return (
