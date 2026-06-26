@@ -1,7 +1,6 @@
 import Link from 'next/link'
 
 import { LandingHero } from '@/app/components/landing/landing-hero'
-import { MastermindSection } from '@/app/components/landing/mastermind-section'
 import { AuthenticatedShell } from '@/app/components/navigation/authenticated-shell'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/server'
@@ -16,17 +15,9 @@ export default async function HomePage() {
     return <LandingHero />
   }
 
-  const metadata = user.user_metadata ?? {}
-
   return (
     <AuthenticatedShell title="Home" subtitle="Welcome to your LogiFacts workspace.">
       <div className="space-y-8">
-        <MastermindSection
-          initialFullName={String(metadata.full_name ?? metadata.fullName ?? '').trim()}
-          initialCompanyName={String(metadata.company_name ?? '').trim()}
-          initialEmail={user.email?.trim() ?? ''}
-          isSignedIn
-        />
         <section className="rounded-2xl border border-border bg-muted/40 px-6 py-10 text-center sm:px-10">
           <h2 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Welcome to the LogiFacts Research Portal
