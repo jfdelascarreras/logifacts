@@ -14,7 +14,7 @@ const TAB_LABELS: Record<Tab, string> = {
 }
 
 function buildCurl(customerId: string) {
-  return `curl -X POST https://logifacts.com/api/rate-calculator \\
+  return `curl -X POST https://logifacts.com/api/v1/rate-calculator \\
   -H "Authorization: Bearer lf_<your_api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -22,6 +22,7 @@ function buildCurl(customerId: string) {
     "origin_zip": "60601",
     "destination_zip": "90210",
     "weight_lbs": 12.5,
+    "dimensions_in": { "length": 12, "width": 10, "height": 8 },
     "residential": false,
     "ups_service": "ground",
     "fedex_service": "ground",
@@ -30,7 +31,7 @@ function buildCurl(customerId: string) {
 }
 
 function buildTsFetch(customerId: string) {
-  return `const response = await fetch('https://logifacts.com/api/rate-calculator', {
+  return `const response = await fetch('https://logifacts.com/api/v1/rate-calculator', {
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${process.env.LOGIFACTS_API_KEY}\`,
@@ -41,6 +42,7 @@ function buildTsFetch(customerId: string) {
     origin_zip: '60601',
     destination_zip: '90210',
     weight_lbs: 12.5,
+    dimensions_in: { length: 12, width: 10, height: 8 },
     residential: false,
     ups_service: 'ground',
     fedex_service: 'ground',

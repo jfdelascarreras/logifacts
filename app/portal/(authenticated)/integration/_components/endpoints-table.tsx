@@ -1,7 +1,7 @@
 const ENDPOINTS = [
   {
     environment: 'Production',
-    url: 'https://logifacts.com/api/rate-calculator',
+    url: 'https://logifacts.com/api/v1/rate-calculator',
     status: 'live',
   },
   {
@@ -11,7 +11,7 @@ const ENDPOINTS = [
   },
   {
     environment: 'Batch',
-    url: 'https://logifacts.com/api/rate-calculator/batch',
+    url: 'https://logifacts.com/api/v1/rate-calculator/batch',
     status: 'coming-soon',
   },
 ]
