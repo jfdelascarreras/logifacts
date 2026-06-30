@@ -82,7 +82,7 @@ async function handler(req: Request) {
     return NextResponse.json({ error: 'Invalid API key.' }, { status: 401 })
   }
 
-  const userId = (keyRow.customers as { user_id: string }).user_id
+  const userId = (keyRow.customers as unknown as { user_id: string }).user_id
 
   // ── Debounced last_used_at ────────────────────────────────────────────────
   // At 100 req/min, write at most once per 60 s per key (nx flag in Redis).
