@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { BrandLogo } from '@/app/components/branding/brand-logo'
+import { MastermindNotify } from '@/app/components/landing/mastermind-notify'
 import { ThemeToggle } from '@/app/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 
@@ -82,6 +83,7 @@ export function LandingHero() {
             </div>
         </section>
 
+        <MastermindNotify />
       </div>
     </div>
   )
