@@ -46,6 +46,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/mastermind/') ||
     pathname.startsWith('/api/internal/') ||
     pathname.startsWith('/api/rate-calculator') ||
+    pathname.startsWith('/api/v1/') ||
+    pathname.startsWith('/api/test/') ||
     pathname.startsWith('/api/admin/')
 
   if (!user && !isPublicRoute) {

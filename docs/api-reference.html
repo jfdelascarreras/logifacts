@@ -1,0 +1,1249 @@
+<title>Logifacts API Reference</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0C1524;
+    --surface:     #132035;
+    --surface-2:   #1A2B42;
+    --border:      #1E3252;
+    --border-hi:   #2A4470;
+    --accent:      #E8613A;
+    --accent-dim:  rgba(232, 97, 58, 0.12);
+    --text:        #E2EAF8;
+    --text-muted:  #7A9BBF;
+    --text-dim:    #445F7A;
+    --post:        #2DC896;
+    --post-dim:    rgba(45, 200, 150, 0.12);
+    --get:         #5BA8E8;
+    --get-dim:     rgba(91, 168, 232, 0.12);
+    --err:         #E85B5B;
+    --warn:        #E8A23A;
+    --radius:      6px;
+    --mono:        'Menlo', 'Cascadia Code', 'Consolas', monospace;
+    --sans:        -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; font-size: 14px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 232px;
+    min-width: 232px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hi) transparent;
+  }
+
+  .sidebar-logo {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .sidebar-logo .wordmark {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .sidebar-logo .wordmark span { color: var(--accent); }
+
+  .sidebar-logo .tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .nav-group { margin-bottom: 4px; }
+
+  .nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 10px 20px 4px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+
+  .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+
+  .nav-link.active {
+    color: var(--text);
+    border-left-color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  .nav-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+  }
+
+  .nav-badge.post { background: var(--post-dim); color: var(--post); }
+  .nav-badge.get  { background: var(--get-dim);  color: var(--get);  }
+
+  /* ── Main content ── */
+  #content {
+    flex: 1;
+    min-width: 0;
+    padding: 48px 64px 120px;
+  }
+
+  .page-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 32px;
+    margin-bottom: 48px;
+  }
+
+  .page-header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    text-wrap: balance;
+  }
+
+  .page-header p {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+    max-width: 560px;
+  }
+
+  .base-url {
+    margin-top: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .base-url strong { color: var(--text); }
+
+  /* ── Sections ── */
+  .section {
+    max-width: 720px;
+    margin-bottom: 72px;
+    scroll-margin-top: 32px;
+  }
+
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 16px;
+    text-wrap: balance;
+  }
+
+  .section-body { color: var(--text-muted); font-size: 14px; line-height: 1.7; }
+  .section-body p + p { margin-top: 10px; }
+
+  /* ── Endpoint header ── */
+  .endpoint-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+
+  .method-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .method-badge.post { background: var(--post-dim); color: var(--post); }
+  .method-badge.get  { background: var(--get-dim);  color: var(--get); }
+
+  .endpoint-path { color: var(--text); font-size: 14px; }
+
+  .endpoint-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    line-height: 1.65;
+  }
+
+  /* ── Code blocks ── */
+  .code-block {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .code-lang {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-family: var(--sans);
+  }
+
+  .copy-btn {
+    font-size: 11px;
+    font-family: var(--sans);
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .copy-btn:hover { color: var(--text-muted); background: var(--border); }
+  .copy-btn.copied { color: var(--post); }
+
+  .code-block pre {
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text);
+    white-space: pre;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+
+  /* JSON highlight */
+  .j-key    { color: #7ECBFF; }
+  .j-str    { color: #A8D5A2; }
+  .j-num    { color: #F0A860; font-variant-numeric: tabular-nums; }
+  .j-bool   { color: #D09AE0; }
+  .j-null   { color: var(--text-dim); }
+  .j-punct  { color: var(--text-dim); }
+  .j-cmnt   { color: var(--text-dim); font-style: italic; }
+
+  /* Shell highlight */
+  .sh-prompt { color: var(--text-dim); }
+  .sh-flag   { color: var(--warn); }
+  .sh-url    { color: var(--get); }
+  .sh-str    { color: #A8D5A2; }
+  .sh-kw     { color: var(--accent); }
+
+  /* ── Parameter tables ── */
+  .param-table-wrap { overflow-x: auto; margin: 16px 0; }
+
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .param-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-hi);
+    font-family: var(--sans);
+    white-space: nowrap;
+  }
+
+  .param-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .param-table td:first-child {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .param-table tr:last-child td { border-bottom: none; }
+  .param-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .req-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(232,97,58,0.15);
+    color: var(--accent);
+    font-family: var(--sans);
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text);
+  }
+
+  /* ── Callout blocks ── */
+  .callout {
+    display: flex;
+    gap: 12px;
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin: 16px 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .callout-info  { background: rgba(91,168,232,0.08); border-left: 3px solid var(--get); }
+  .callout-warn  { background: rgba(232,162,58,0.08); border-left: 3px solid var(--warn); }
+
+  .callout-icon { flex-shrink: 0; font-size: 14px; line-height: 1.6; }
+
+  .callout p { color: var(--text-muted); }
+  .callout p strong { color: var(--text); font-weight: 600; }
+
+  /* ── Status chips ── */
+  .status-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+  .status-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  .status-chip.pending   { background: rgba(90,168,232,0.15);  color: var(--get); }
+  .status-chip.completed { background: rgba(45,200,150,0.15);  color: var(--post); }
+  .status-chip.error     { background: rgba(232,91,91,0.15);   color: var(--err); }
+  .status-chip.failed    { background: rgba(232,91,91,0.10);   color: var(--err); }
+
+  /* ── HTTP error table ── */
+  .http-code {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .http-code.e4 { color: var(--warn); }
+  .http-code.e5 { color: var(--err); }
+
+  /* ── Divider ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0 0 48px;
+  }
+
+  /* ── Rate limit bar ── */
+  .rate-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.03em;
+  }
+
+  .rate-pill-unit {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-muted);
+    letter-spacing: 0;
+  }
+
+  /* ── Scrollbar ── */
+  #content::-webkit-scrollbar { width: 6px; }
+  #content::-webkit-scrollbar-track { background: transparent; }
+  #content::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 720px) {
+    body { flex-direction: column; }
+    #sidebar {
+      width: 100%;
+      min-width: unset;
+      height: auto;
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+      padding: 16px;
+      gap: 4px;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo { padding: 0; border: none; margin: 0; width: 100%; }
+    .nav-group { display: flex; align-items: center; gap: 4px; }
+    .nav-label { display: none; }
+    .nav-link { padding: 5px 10px; border-left: none; border-radius: 4px; font-size: 12px; }
+    .nav-link.active { background: var(--accent-dim); border: none; }
+    #content { padding: 32px 20px 80px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+
+<!-- Sidebar -->
+<nav id="sidebar" aria-label="API reference navigation">
+  <div class="sidebar-logo">
+    <div class="wordmark">Logi<span>Facts</span></div>
+    <div class="tag">API Reference · v1</div>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-label">Getting Started</div>
+    <a href="#overview"        class="nav-link active">Overview</a>
+    <a href="#authentication"  class="nav-link">Authentication</a>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-label">Endpoints</div>
+    <a href="#rate-calculator" class="nav-link">
+      <span class="nav-badge post">POST</span>
+      Rate Calculator
+    </a>
+    <a href="#rate-calculator-batch" class="nav-link">
+      <span class="nav-badge post">POST</span>
+      Batch Calculator
+    </a>
+    <a href="#rate-requests" class="nav-link">
+      <span class="nav-badge get">GET</span>
+      Rate Requests
+    </a>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-label">Reference</div>
+    <a href="#async-webhooks"  class="nav-link">Webhooks</a>
+    <a href="#rate-limiting"   class="nav-link">Rate Limiting</a>
+    <a href="#services"        class="nav-link">Service Codes</a>
+    <a href="#errors"          class="nav-link">Error Codes</a>
+  </div>
+</nav>
+
+<!-- Main content -->
+<main id="content">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <h1>API Reference</h1>
+    <p>Calculate UPS and FedEx shipping rates in a single request. Returns carrier-specific breakdowns with your contracted discounts applied.</p>
+    <div class="base-url">
+      <span style="color:var(--text-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--sans)">Base URL</span>
+      <strong>https://logifacts.com</strong>
+    </div>
+  </div>
+
+  <!-- Overview -->
+  <section class="section" id="overview">
+    <h2 class="section-title">Overview</h2>
+    <div class="section-body">
+      <p>All API endpoints are under <code>/api/v1/</code>. Requests and responses use JSON. The API supports two request modes:</p>
+    </div>
+
+    <div class="param-table-wrap" style="margin-top:16px">
+      <table class="param-table">
+        <thead>
+          <tr><th>Mode</th><th>How it works</th><th>Use when</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Synchronous</td>
+            <td style="color:var(--text-muted)">Rates are calculated inline. Response arrives in ~500ms.</td>
+            <td style="color:var(--text-muted)">User is waiting; latency matters.</td>
+          </tr>
+          <tr>
+            <td>Async</td>
+            <td style="color:var(--text-muted)">Returns <code>request_id</code> immediately. Result delivered to your <code>callback_url</code> via webhook within ~30s.</td>
+            <td style="color:var(--text-muted)">Background jobs; fire-and-forget pipelines.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Authentication -->
+  <section class="section" id="authentication">
+    <h2 class="section-title">Authentication</h2>
+    <p class="endpoint-desc">Every request must include your API key as a Bearer token. Keys are scoped to your customer account — you can only read your own data.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">HTTP Header</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>Authorization: Bearer lf_your_api_key_here</pre>
+    </div>
+
+    <div class="callout callout-info">
+      <span class="callout-icon">ℹ</span>
+      <p><strong>Getting your key</strong> — Sign in to your portal, go to <strong>Integration → Credentials</strong>. Your key is shown once on creation; store it securely. If lost, regenerate it from the same page — the old key is immediately invalidated.</p>
+    </div>
+
+    <div class="callout callout-warn">
+      <span class="callout-icon">⚠</span>
+      <p><strong>Keys are hashed at rest.</strong> Logifacts never stores your key in plaintext. Treat it like a password — do not commit it to source control or expose it client-side.</p>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Sandbox keys</h3>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.65">Keys prefixed with <code>lf_test_</code> are sandbox keys. They return deterministic mock rates ($9.99 flat) without making real carrier API calls. Sandbox keys are safe to use in CI, staging, and development. Generate one from <strong style="color:var(--text)">Integration → Credentials → Sandbox Test Key</strong>.</p>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.65;margin-top:8px">Responses from sandbox keys include <code>"_sandbox": true</code> at the top level so you can detect them programmatically.</p>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Rate Calculator -->
+  <section class="section" id="rate-calculator">
+    <h2 class="section-title">Rate Calculator</h2>
+
+    <div class="endpoint-header">
+      <span class="method-badge post">POST</span>
+      <span class="endpoint-path">/api/v1/rate-calculator</span>
+    </div>
+
+    <p class="endpoint-desc">Returns UPS and FedEx rates for a shipment. Both carriers are calculated in a single request with your contracted discounts applied. Include <code>callback_url</code> to switch to async mode.</p>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:20px 0 8px;letter-spacing:-.01em">Optional request headers</h3>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Header</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Idempotency-Key</td>
+            <td>Any unique string (UUID recommended). If a request with the same key was completed in the last 5 minutes, the cached response is returned without re-running the calculation. Safe for retrying on network errors.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Request body</h3>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>origin_zip <span class="req-badge">required</span></td>
+            <td>string</td>
+            <td>5-digit origin ZIP code</td>
+          </tr>
+          <tr>
+            <td>destination_zip <span class="req-badge">required</span></td>
+            <td>string</td>
+            <td>5-digit destination ZIP code</td>
+          </tr>
+          <tr>
+            <td>weight_lbs <span class="req-badge">required</span></td>
+            <td>number</td>
+            <td>Actual weight in pounds (positive)</td>
+          </tr>
+          <tr>
+            <td>dimensions_in <span class="req-badge">required</span></td>
+            <td>object</td>
+            <td><code>{ length, width, height }</code> in inches. Used to calculate dimensional weight.</td>
+          </tr>
+          <tr>
+            <td>residential</td>
+            <td>boolean</td>
+            <td>Residential delivery surcharge. Default: <code>false</code></td>
+          </tr>
+          <tr>
+            <td>ups_service</td>
+            <td>string</td>
+            <td>UPS service level. Default: <code>ground</code>. See <a href="#services" style="color:var(--accent);text-decoration:none">Service Codes</a>.</td>
+          </tr>
+          <tr>
+            <td>fedex_service</td>
+            <td>string</td>
+            <td>FedEx service level. Default: <code>ground</code> (or <code>home_delivery</code> when residential). See <a href="#services" style="color:var(--accent);text-decoration:none">Service Codes</a>.</td>
+          </tr>
+          <tr>
+            <td>non_standard</td>
+            <td>boolean</td>
+            <td>Non-standard package surcharge. Default: <code>false</code></td>
+          </tr>
+          <tr>
+            <td>address_correction</td>
+            <td>boolean</td>
+            <td>Address correction fee. Default: <code>false</code></td>
+          </tr>
+          <tr>
+            <td>markup_pct</td>
+            <td>number</td>
+            <td>Markup percentage applied on top of calculated rate. Range: 0–500. Default: <code>0</code></td>
+          </tr>
+          <tr>
+            <td>callback_url</td>
+            <td>string</td>
+            <td>HTTPS URL. When present, switches to async mode — returns <code>request_id</code> immediately and POSTs the result to this URL.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Sync example -->
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:28px 0 8px;letter-spacing:-.01em">Synchronous request</h3>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">cURL</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="sh-kw">curl</span> <span class="sh-flag">-X POST</span> <span class="sh-url">https://logifacts.com/api/v1/rate-calculator</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Authorization: Bearer lf_your_api_key"</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Content-Type: application/json"</span> \
+  <span class="sh-flag">-d</span> <span class="sh-str">'{
+    "origin_zip": "90210",
+    "destination_zip": "10001",
+    "weight_lbs": 5,
+    "dimensions_in": { "length": 12, "width": 10, "height": 8 },
+    "residential": false,
+    "ups_service": "ground",
+    "fedex_service": "ground"
+  }'</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Response · 200</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"request_id"</span><span class="j-punct">:</span> <span class="j-str">"a1b2c3d4-e5f6-7890-abcd-ef1234567890"</span><span class="j-punct">,</span>
+  <span class="j-key">"ups"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"service"</span><span class="j-punct">:</span>          <span class="j-str">"ground"</span><span class="j-punct">,</span>
+    <span class="j-key">"base_rate"</span><span class="j-punct">:</span>        <span class="j-num">10.20</span><span class="j-punct">,</span>
+    <span class="j-key">"fuel_surcharge"</span><span class="j-punct">:</span>   <span class="j-num">1.45</span><span class="j-punct">,</span>
+    <span class="j-key">"residential_fee"</span><span class="j-punct">:</span>  <span class="j-num">0.00</span><span class="j-punct">,</span>
+    <span class="j-key">"other_fees"</span><span class="j-punct">:</span>       <span class="j-num">0.00</span><span class="j-punct">,</span>
+    <span class="j-key">"final_rate"</span><span class="j-punct">:</span>       <span class="j-num">11.65</span><span class="j-punct">,</span>
+    <span class="j-key">"currency"</span><span class="j-punct">:</span>         <span class="j-str">"USD"</span>
+  <span class="j-punct">},</span>
+  <span class="j-key">"fedex"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"service"</span><span class="j-punct">:</span>          <span class="j-str">"ground"</span><span class="j-punct">,</span>
+    <span class="j-key">"base_rate"</span><span class="j-punct">:</span>        <span class="j-num">9.80</span><span class="j-punct">,</span>
+    <span class="j-key">"fuel_surcharge"</span><span class="j-punct">:</span>   <span class="j-num">1.30</span><span class="j-punct">,</span>
+    <span class="j-key">"residential_fee"</span><span class="j-punct">:</span>  <span class="j-num">0.00</span><span class="j-punct">,</span>
+    <span class="j-key">"other_fees"</span><span class="j-punct">:</span>       <span class="j-num">0.00</span><span class="j-punct">,</span>
+    <span class="j-key">"final_rate"</span><span class="j-punct">:</span>       <span class="j-num">11.10</span><span class="j-punct">,</span>
+    <span class="j-key">"currency"</span><span class="j-punct">:</span>         <span class="j-str">"USD"</span>
+  <span class="j-punct">}</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <!-- Async example -->
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:28px 0 8px;letter-spacing:-.01em">Async request</h3>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Add <code>callback_url</code> to the body. The API returns immediately; the result is POSTed to your URL once the calculation completes.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">cURL</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="sh-kw">curl</span> <span class="sh-flag">-X POST</span> <span class="sh-url">https://logifacts.com/api/v1/rate-calculator</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Authorization: Bearer lf_your_api_key"</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Content-Type: application/json"</span> \
+  <span class="sh-flag">-d</span> <span class="sh-str">'{
+    "origin_zip": "90210",
+    "destination_zip": "10001",
+    "weight_lbs": 5,
+    "dimensions_in": { "length": 12, "width": 10, "height": 8 },
+    "residential": false,
+    "callback_url": "https://your-server.com/webhooks/rates"
+  }'</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Response · 200 (immediate)</span>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"request_id"</span><span class="j-punct">:</span> <span class="j-str">"a1b2c3d4-e5f6-7890-abcd-ef1234567890"</span><span class="j-punct">,</span>
+  <span class="j-key">"status"</span><span class="j-punct">:</span>     <span class="j-str">"pending"</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <div class="callout callout-info">
+      <span class="callout-icon">ℹ</span>
+      <p>Poll <code>GET /api/v1/rate-requests/:id</code> if you need the result before the webhook arrives, or to check delivery status.</p>
+    </div>
+
+    <!-- TypeScript snippet -->
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:28px 0 8px;letter-spacing:-.01em">TypeScript example</h3>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">TypeScript</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="j-cmnt">// Synchronous rate lookup</span>
+<span style="color:#D09AE0">const</span> res = <span style="color:#D09AE0">await</span> fetch(<span class="j-str">"https://logifacts.com/api/v1/rate-calculator"</span>, {
+  method: <span class="j-str">"POST"</span>,
+  headers: {
+    <span class="j-str">"Authorization"</span>: <span class="j-str">`Bearer ${process.env.LOGIFACTS_API_KEY}`</span>,
+    <span class="j-str">"Content-Type"</span>:  <span class="j-str">"application/json"</span>,
+  },
+  body: JSON.stringify({
+    origin_zip:      <span class="j-str">"90210"</span>,
+    destination_zip: <span class="j-str">"10001"</span>,
+    weight_lbs:      <span class="j-num">5</span>,
+    dimensions_in:   { length: <span class="j-num">12</span>, width: <span class="j-num">10</span>, height: <span class="j-num">8</span> },
+  }),
+})
+
+<span style="color:#D09AE0">const</span> { ups, fedex } = <span style="color:#D09AE0">await</span> res.json()
+console.log(<span class="j-str">`UPS: $${ups.final_rate} · FedEx: $${fedex.final_rate}`</span>)</pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Batch Rate Calculator -->
+  <section class="section" id="rate-calculator-batch">
+    <h2 class="section-title">Batch Rate Calculator</h2>
+
+    <div class="endpoint-header">
+      <span class="method-badge post">POST</span>
+      <span class="endpoint-path">/api/v1/rate-calculator/batch</span>
+    </div>
+
+    <p class="endpoint-desc">Calculate rates for up to 100 shipments in a single request. All shipments are processed in parallel using your contracted discounts. Returns per-item results — individual validation failures do not fail the entire batch.</p>
+
+    <div class="callout callout-warn">
+      <span class="callout-icon">⚠</span>
+      <p><strong>Sync only.</strong> The batch endpoint does not support <code>callback_url</code>. For async processing, submit individual requests with a <code>callback_url</code>.</p>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:20px 0 8px;letter-spacing:-.01em">Optional request headers</h3>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Header</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Idempotency-Key</td>
+            <td>Same semantics as the single endpoint — the entire batch response is cached for 5 minutes. Recommended when retrying on network errors.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Request body</h3>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>shipments <span class="req-badge">required</span></td>
+            <td>array</td>
+            <td>1–100 shipment objects. Each item uses the same fields as the single rate calculator (except <code>callback_url</code>, which is not supported).</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:28px 0 8px;letter-spacing:-.01em">Example request</h3>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">cURL</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="sh-kw">curl</span> <span class="sh-flag">-X POST</span> <span class="sh-url">https://logifacts.com/api/v1/rate-calculator/batch</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Authorization: Bearer lf_your_api_key"</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Content-Type: application/json"</span> \
+  <span class="sh-flag">-H</span> <span class="sh-str">"Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000"</span> \
+  <span class="sh-flag">-d</span> <span class="sh-str">'{
+    "shipments": [
+      {
+        "origin_zip": "90210",
+        "destination_zip": "10001",
+        "weight_lbs": 5,
+        "dimensions_in": { "length": 12, "width": 10, "height": 8 }
+      },
+      {
+        "origin_zip": "77001",
+        "destination_zip": "60601",
+        "weight_lbs": 12,
+        "dimensions_in": { "length": 18, "width": 14, "height": 10 },
+        "residential": true,
+        "fedex_service": "home_delivery"
+      }
+    ]
+  }'</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Response · 200</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"results"</span><span class="j-punct">:</span> <span class="j-punct">[</span>
+    <span class="j-punct">{</span>
+      <span class="j-key">"index"</span><span class="j-punct">:</span> <span class="j-num">0</span><span class="j-punct">,</span>
+      <span class="j-key">"ups"</span><span class="j-punct">:</span>   <span class="j-punct">{</span> <span class="j-key">"service"</span><span class="j-punct">:</span> <span class="j-str">"ground"</span><span class="j-punct">,</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.65</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">},</span>
+      <span class="j-key">"fedex"</span><span class="j-punct">:</span> <span class="j-punct">{</span> <span class="j-key">"service"</span><span class="j-punct">:</span> <span class="j-str">"ground"</span><span class="j-punct">,</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.10</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">}</span>
+    <span class="j-punct">},</span>
+    <span class="j-punct">{</span>
+      <span class="j-key">"index"</span><span class="j-punct">:</span> <span class="j-num">1</span><span class="j-punct">,</span>
+      <span class="j-key">"ups"</span><span class="j-punct">:</span>   <span class="j-punct">{</span> <span class="j-key">"service"</span><span class="j-punct">:</span> <span class="j-str">"ground"</span><span class="j-punct">,</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">18.42</span><span class="j-punct">,</span> <span class="j-key">"residential_fee"</span><span class="j-punct">:</span> <span class="j-num">4.90</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">},</span>
+      <span class="j-key">"fedex"</span><span class="j-punct">:</span> <span class="j-punct">{</span> <span class="j-key">"service"</span><span class="j-punct">:</span> <span class="j-str">"home_delivery"</span><span class="j-punct">,</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">17.88</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">}</span>
+    <span class="j-punct">}</span>
+  <span class="j-punct">]</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.65;margin-top:12px">If any shipment fails validation, its result contains an <code>error</code> object instead of rates. The rest of the batch still succeeds.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Per-item error</span>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"index"</span><span class="j-punct">:</span> <span class="j-num">2</span><span class="j-punct">,</span>
+  <span class="j-key">"error"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"code"</span><span class="j-punct">:</span>    <span class="j-str">"VALIDATION_ERROR"</span><span class="j-punct">,</span>
+    <span class="j-key">"message"</span><span class="j-punct">:</span> <span class="j-str">"weight_lbs must be a positive number."</span>
+  <span class="j-punct">}</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <div class="callout callout-info">
+      <span class="callout-icon">ℹ</span>
+      <p><strong>Rate limiting.</strong> The entire batch request counts as <strong>1 slot</strong> against your rate limit, regardless of how many shipments are included.</p>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Rate Requests -->
+  <section class="section" id="rate-requests">
+    <h2 class="section-title">Rate Requests</h2>
+
+    <div class="endpoint-header">
+      <span class="method-badge get">GET</span>
+      <span class="endpoint-path">/api/v1/rate-requests/:id</span>
+    </div>
+
+    <p class="endpoint-desc">Retrieve the status and result of a rate request. Useful for polling after an async request or for auditing past calculations.</p>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:20px 0 8px;letter-spacing:-.01em">Status values</h3>
+    <div class="status-row">
+      <span class="status-chip pending">pending</span>
+      <span class="status-chip completed">completed</span>
+      <span class="status-chip error">error</span>
+      <span class="status-chip failed">delivery_failed</span>
+    </div>
+
+    <div class="param-table-wrap" style="margin-top:12px">
+      <table class="param-table">
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>pending</td>
+            <td>Calculation is queued or in progress.</td>
+          </tr>
+          <tr>
+            <td>completed</td>
+            <td>Calculation succeeded. Result is in the <code>result</code> field.</td>
+          </tr>
+          <tr>
+            <td>error</td>
+            <td>The rate <em>calculation</em> itself failed (e.g. invalid zip code that passed schema validation). No result is available.</td>
+          </tr>
+          <tr>
+            <td>delivery_failed</td>
+            <td>Calculation succeeded but all webhook delivery attempts to <code>callback_url</code> were exhausted. The result is still accessible via this endpoint in the <code>result</code> field.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code-block" style="margin-top:20px">
+      <div class="code-header">
+        <span class="code-lang">Response · 200 (completed)</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"request_id"</span><span class="j-punct">:</span> <span class="j-str">"a1b2c3d4-e5f6-7890-abcd-ef1234567890"</span><span class="j-punct">,</span>
+  <span class="j-key">"status"</span><span class="j-punct">:</span>     <span class="j-str">"completed"</span><span class="j-punct">,</span>
+  <span class="j-key">"result"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"ups"</span><span class="j-punct">:</span>   <span class="j-punct">{</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.65</span><span class="j-punct">,</span> <span class="j-key">"..."</span><span class="j-punct">:</span> <span class="j-str">"see rate calculator response"</span> <span class="j-punct">},</span>
+    <span class="j-key">"fedex"</span><span class="j-punct">:</span> <span class="j-punct">{</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.10</span><span class="j-punct">,</span> <span class="j-key">"..."</span><span class="j-punct">:</span> <span class="j-str">"see rate calculator response"</span> <span class="j-punct">}</span>
+  <span class="j-punct">},</span>
+  <span class="j-key">"webhook"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"callback_url"</span><span class="j-punct">:</span>       <span class="j-str">"https://your-server.com/webhooks/rates"</span><span class="j-punct">,</span>
+    <span class="j-key">"delivery_attempts"</span><span class="j-punct">:</span> <span class="j-num">1</span><span class="j-punct">,</span>
+    <span class="j-key">"delivered_at"</span><span class="j-punct">:</span>       <span class="j-str">"2026-07-01T12:34:56Z"</span>
+  <span class="j-punct">},</span>
+  <span class="j-key">"created_at"</span><span class="j-punct">:</span>  <span class="j-str">"2026-07-01T12:34:20Z"</span><span class="j-punct">,</span>
+  <span class="j-key">"updated_at"</span><span class="j-punct">:</span>  <span class="j-str">"2026-07-01T12:34:23Z"</span>
+<span class="j-punct">}</span></pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Webhooks -->
+  <section class="section" id="async-webhooks">
+    <h2 class="section-title">Webhooks</h2>
+    <p class="endpoint-desc">When a <code>callback_url</code> is provided, Logifacts POSTs the result to that URL once the calculation completes. Your endpoint must be reachable over HTTPS and return a 2xx within 10 seconds.</p>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:20px 0 8px;letter-spacing:-.01em">Delivery headers</h3>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Header</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>X-Logifacts-Signature</td>
+            <td><code>sha256=&lt;hex&gt;</code> — HMAC-SHA256 of the raw request body, keyed with your API key's SHA-256 hash.</td>
+          </tr>
+          <tr>
+            <td>X-Logifacts-Request-Id</td>
+            <td>The <code>request_id</code> UUID from the original async request.</td>
+          </tr>
+          <tr>
+            <td>Content-Type</td>
+            <td><code>application/json</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Verifying the signature</h3>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">TypeScript · Node.js</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><span style="color:#D09AE0">import</span> crypto <span style="color:#D09AE0">from</span> <span class="j-str">"node:crypto"</span>
+
+<span style="color:#D09AE0">async function</span> verifySignature(
+  rawBody: string,
+  signatureHeader: string,
+  apiKey: string,
+): Promise&lt;boolean&gt; {
+  <span class="j-cmnt">// Hash your raw API key to get the signing key</span>
+  <span style="color:#D09AE0">const</span> keyHash = crypto
+    .createHash(<span class="j-str">"sha256"</span>)
+    .update(apiKey)
+    .digest(<span class="j-str">"hex"</span>)
+
+  <span style="color:#D09AE0">const</span> expected = <span class="j-str">"sha256="</span> + crypto
+    .createHmac(<span class="j-str">"sha256"</span>, keyHash)
+    .update(rawBody)
+    .digest(<span class="j-str">"hex"</span>)
+
+  <span style="color:#D09AE0">return</span> crypto.timingSafeEqual(
+    Buffer.from(expected),
+    Buffer.from(signatureHeader),
+  )
+}</pre>
+    </div>
+
+    <div class="callout callout-warn">
+      <span class="callout-icon">⚠</span>
+      <p><strong>Always verify before processing.</strong> Read the raw body as a string before parsing JSON — any transformation changes the signature. Use <code>timingSafeEqual</code> to prevent timing attacks.</p>
+    </div>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Retries</h3>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.65">Logifacts attempts delivery up to <strong style="color:var(--text)">3 times</strong> (immediate + 2 retries) with exponential backoff (~30s, ~5min). If all attempts fail, the request status is set to <span class="status-chip failed" style="font-size:10px">delivery_failed</span> and no further attempts are made. Your endpoint should return <code>200</code> on success.</p>
+
+    <h3 style="font-size:13px;font-weight:600;color:var(--text);margin:24px 0 8px;letter-spacing:-.01em">Webhook payload</h3>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">JSON · Success</span>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"request_id"</span><span class="j-punct">:</span> <span class="j-str">"a1b2c3d4-..."</span><span class="j-punct">,</span>
+  <span class="j-key">"status"</span><span class="j-punct">:</span>     <span class="j-str">"completed"</span><span class="j-punct">,</span>
+  <span class="j-key">"ups"</span><span class="j-punct">:</span>        <span class="j-punct">{</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.65</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">},</span>
+  <span class="j-key">"fedex"</span><span class="j-punct">:</span>      <span class="j-punct">{</span> <span class="j-key">"final_rate"</span><span class="j-punct">:</span> <span class="j-num">11.10</span><span class="j-punct">,</span> <span class="j-key">"..."</span> <span class="j-punct">},</span>
+  <span class="j-key">"warnings"</span><span class="j-punct">:</span>   <span class="j-punct">[]</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">JSON · Failure</span>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"request_id"</span><span class="j-punct">:</span> <span class="j-str">"a1b2c3d4-..."</span><span class="j-punct">,</span>
+  <span class="j-key">"status"</span><span class="j-punct">:</span>     <span class="j-str">"failed"</span><span class="j-punct">,</span>
+  <span class="j-key">"error"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"code"</span><span class="j-punct">:</span>    <span class="j-str">"CALCULATION_ERROR"</span><span class="j-punct">,</span>
+    <span class="j-key">"message"</span><span class="j-punct">:</span> <span class="j-str">"Rate calculation failed. See request logs for details."</span>
+  <span class="j-punct">}</span>
+<span class="j-punct">}</span></pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Rate Limiting -->
+  <section class="section" id="rate-limiting">
+    <h2 class="section-title">Rate Limiting</h2>
+
+    <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:16px">
+      <span class="rate-pill">100 <span class="rate-pill-unit">requests / minute / key</span></span>
+    </div>
+
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.65;margin-bottom:16px">Rate limits are enforced per API key using a sliding window. Limits reset on a rolling basis — not at a fixed clock boundary.</p>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Response header</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>X-RateLimit-Remaining</td>
+            <td>Requests remaining in the current window</td>
+          </tr>
+          <tr>
+            <td>X-RateLimit-Reset</td>
+            <td>Unix timestamp (ms) when the oldest request in the window expires</td>
+          </tr>
+          <tr>
+            <td>Retry-After</td>
+            <td>Seconds to wait before retrying. Included on <strong>429</strong> responses only.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-info" style="margin-top:16px">
+      <span class="callout-icon">ℹ</span>
+      <p>When the limit is exceeded the API returns <strong>429</strong> with a <code>Retry-After</code> header. Async requests and batch requests each consume <strong>1 slot</strong> regardless of shipment count.</p>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Service Codes -->
+  <section class="section" id="services">
+    <h2 class="section-title">Service Codes</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div>
+        <h3 style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px">UPS — ups_service</h3>
+        <div class="param-table-wrap">
+          <table class="param-table">
+            <thead><tr><th>Value</th><th>Service</th></tr></thead>
+            <tbody>
+              <tr><td>ground</td>    <td>UPS Ground</td></tr>
+              <tr><td>3day</td>      <td>UPS 3 Day Select</td></tr>
+              <tr><td>2day</td>      <td>UPS 2nd Day Air</td></tr>
+              <tr><td>2day_am</td>   <td>UPS 2nd Day Air A.M.</td></tr>
+              <tr><td>nda_saver</td> <td>UPS Next Day Air Saver</td></tr>
+              <tr><td>nda</td>       <td>UPS Next Day Air</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px">FedEx — fedex_service</h3>
+        <div class="param-table-wrap">
+          <table class="param-table">
+            <thead><tr><th>Value</th><th>Service</th></tr></thead>
+            <tbody>
+              <tr><td>ground</td>              <td>FedEx Ground</td></tr>
+              <tr><td>home_delivery</td>       <td>FedEx Home Delivery</td></tr>
+              <tr><td>express_saver</td>       <td>FedEx Express Saver</td></tr>
+              <tr><td>2day</td>                <td>FedEx 2Day</td></tr>
+              <tr><td>standard_overnight</td>  <td>FedEx Standard Overnight</td></tr>
+              <tr><td>priority_overnight</td>  <td>FedEx Priority Overnight</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- Error Codes -->
+  <section class="section" id="errors">
+    <h2 class="section-title">Error Codes</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.65">All errors return a JSON body with a structured <code>error</code> object containing a machine-readable <code>code</code> and a human-readable <code>message</code>. Validation errors (422) include a field-specific message.</p>
+
+    <div class="param-table-wrap">
+      <table class="param-table">
+        <thead><tr><th>Status</th><th>Meaning</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="http-code">400</span></td>
+            <td>Malformed request body</td>
+            <td style="color:var(--text-muted)">Fix JSON syntax before retrying</td>
+          </tr>
+          <tr>
+            <td><span class="http-code e4">401</span></td>
+            <td>Missing or invalid API key</td>
+            <td style="color:var(--text-muted)">Check the <code>Authorization</code> header</td>
+          </tr>
+          <tr>
+            <td><span class="http-code e4">422</span></td>
+            <td>Validation error — see <code>error.message</code></td>
+            <td style="color:var(--text-muted)">Fix the field named in the error message</td>
+          </tr>
+          <tr>
+            <td><span class="http-code e4">429</span></td>
+            <td>Rate limit exceeded</td>
+            <td style="color:var(--text-muted)">Wait <code>Retry-After</code> seconds, then retry</td>
+          </tr>
+          <tr>
+            <td><span class="http-code e5">500</span></td>
+            <td>Unexpected server error</td>
+            <td style="color:var(--text-muted)">Retry with exponential backoff; contact support if persistent</td>
+          </tr>
+          <tr>
+            <td><span class="http-code e5">503</span></td>
+            <td>Upstream service unavailable</td>
+            <td style="color:var(--text-muted)">Retry after a short delay</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code-block" style="margin-top:16px">
+      <div class="code-header">
+        <span class="code-lang">Error response shape</span>
+      </div>
+      <pre><span class="j-punct">{</span>
+  <span class="j-key">"error"</span><span class="j-punct">:</span> <span class="j-punct">{</span>
+    <span class="j-key">"code"</span><span class="j-punct">:</span>    <span class="j-str">"VALIDATION_ERROR"</span><span class="j-punct">,</span>
+    <span class="j-key">"message"</span><span class="j-punct">:</span> <span class="j-str">"dimensions_in must have positive numeric length, width, and height (in inches)."</span>
+  <span class="j-punct">}</span>
+<span class="j-punct">}</span></pre>
+    </div>
+
+    <div class="param-table-wrap" style="margin-top:16px">
+      <table class="param-table">
+        <thead><tr><th>error.code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>INVALID_BODY</td>        <td>Request body could not be parsed as JSON</td></tr>
+          <tr><td>UNAUTHORIZED</td>        <td>Missing or malformed <code>Authorization</code> header</td></tr>
+          <tr><td>INVALID_KEY</td>         <td>API key not found or inactive</td></tr>
+          <tr><td>VALIDATION_ERROR</td>    <td>A required field is missing or has an invalid value</td></tr>
+          <tr><td>RATE_LIMITED</td>        <td>Rate limit exceeded — see <code>Retry-After</code> header</td></tr>
+          <tr><td>NOT_FOUND</td>           <td>Resource not found (e.g. unknown <code>request_id</code>)</td></tr>
+          <tr><td>INTERNAL_ERROR</td>      <td>Unexpected server error</td></tr>
+          <tr><td>SERVICE_UNAVAILABLE</td> <td>Upstream service temporarily unavailable</td></tr>
+          <tr><td>INVALID_CALLBACK_URL</td><td>Provided <code>callback_url</code> is not a valid HTTPS URL</td></tr>
+          <tr><td>CALCULATION_ERROR</td>   <td>Rate calculation failed (async path only — appears in webhook and <code>GET /rate-requests/:id</code>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Copy button
+  function copyCode(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre')
+    const text = pre.innerText
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied'
+      btn.classList.add('copied')
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied') }, 1800)
+    })
+  }
+
+  // Active nav on scroll
+  const sections = document.querySelectorAll('section[id]')
+  const navLinks = document.querySelectorAll('.nav-link[href^="#"]')
+
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navLinks.forEach(l => l.classList.remove('active'))
+        const active = document.querySelector(`.nav-link[href="#${e.target.id}"]`)
+        if (active) active.classList.add('active')
+      }
+    })
+  }, { rootMargin: '-20% 0px -70% 0px' })
+
+  sections.forEach(s => obs.observe(s))
+</script>
