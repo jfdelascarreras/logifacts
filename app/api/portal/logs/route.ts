@@ -137,7 +137,7 @@ export async function GET(req: Request) {
   q = q.order('created_at', { ascending: false })
 
   if (format === 'csv') {
-    const { data } = await q
+    const { data } = await q.limit(10_000)
     const csv = buildCsv((data ?? []) as Row[])
     return new Response(csv, {
       headers: {

@@ -11,7 +11,7 @@ const STEPS = [
     icon: SendIcon,
     title: 'Make your first request',
     description:
-      'POST to /api/rate-calculator with your customer_id and shipment details. Use the curl or TypeScript examples below.',
+      'POST to /api/v1/rate-calculator with your customer_id and shipment details. Use the curl or TypeScript examples below.',
   },
   {
     icon: ZapIcon,
