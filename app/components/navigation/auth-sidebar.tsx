@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { label: 'Join Panel', href: '/join-panel' },
   { label: 'My Benchmark', href: '/my-benchmark' },
   { label: 'Consumer Study', href: '/consumer-study' },
+  { label: 'API Portal', href: '/portal' },
   { label: 'My Profile', href: '/protected' },
   { label: 'Customers', href: '/dashboard/customers', adminOnly: true },
 ]

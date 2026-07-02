@@ -71,6 +71,7 @@ jobs:
 
       - name: Validate response has ground and air rates
         id: validate
+        if: steps.fetch.outputs.response != ''
         run: |
           RESPONSE='${{ steps.fetch.outputs.response }}'
           GROUND=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['ground'])" 2>/dev/null)
@@ -88,6 +89,7 @@ jobs:
 
       - name: Update history JSON
         id: update
+        if: steps.validate.outputs.ground != ''
         run: |
           python3 - <<'EOF'
           import json, sys

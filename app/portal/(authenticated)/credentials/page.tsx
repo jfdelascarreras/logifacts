@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { CredentialsDisplay } from './_components/credentials-display'
 import { KeyHistoryTable, type ApiKeyRow } from './_components/key-history-table'
 import { RegenerateFlow } from './_components/regenerate-flow'
+import { TestKeyFlow } from './_components/test-key-flow'
 
 export const metadata = { title: 'API Credentials — LogiFacts Portal' }
 
@@ -25,7 +26,8 @@ export default async function CredentialsPage() {
     .order('created_at', { ascending: false })
 
   const typedKeys = (keys ?? []) as ApiKeyRow[]
-  const activeKey = typedKeys.find((k) => k.active) ?? null
+  const activeKey     = typedKeys.find((k) => k.active && (k as ApiKeyRow & { key_type?: string }).key_type !== 'test') ?? null
+  const hasTestKey    = typedKeys.some((k) => k.active && (k as ApiKeyRow & { key_type?: string }).key_type === 'test')
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -45,6 +47,10 @@ export default async function CredentialsPage() {
 
       <div className="border-t border-border pt-6">
         <RegenerateFlow />
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <TestKeyFlow hasExistingTestKey={hasTestKey} />
       </div>
 
       {typedKeys.length > 0 && (
